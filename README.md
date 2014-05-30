@@ -30,7 +30,7 @@ vi local-config.php # configure database access
 
 cd wp-content/themes/akai-new
 npm install
-grunt server
+grunt 
 
 # if everything went okay, now if you can work on the theme or anything =)
 # Remember to read "Theme configuration" section below in this README.

@@ -6,7 +6,7 @@
  * Licensed under the GPLv2+ license.
  */
  
- ( function( window, undefined ) {
+ ( function( window, $, undefined ) {
 	'use strict';
 
   // install skrollr
@@ -38,4 +38,8 @@
   menuToggleButton.addEventListener('click', toggleMenu);
   menuToggleButton.addEventListener('touchend', toggleMenu);
 
- } )( this );
+  $(document).ready(function(){
+    console.log("jQuery is working!");
+  });
+
+ } )( this, jQuery );

@@ -140,7 +140,7 @@ document.addEventListener('DOMContentLoaded', function(){
   });
 });
 
-( function( window, undefined ) {
+( function( window, $, undefined ) {
 	'use strict';
 
   // install skrollr
@@ -172,4 +172,8 @@ document.addEventListener('DOMContentLoaded', function(){
   menuToggleButton.addEventListener('click', toggleMenu);
   menuToggleButton.addEventListener('touchend', toggleMenu);
 
- } )( this );
+  $(document).ready(function(){
+    console.log("jQuery is working!");
+  });
+
+ } )( this, jQuery );

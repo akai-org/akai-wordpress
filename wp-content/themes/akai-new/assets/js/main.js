@@ -177,24 +177,25 @@ document.addEventListener('DOMContentLoaded', function(){
 
   $(document).ready(function(){
 
-    var setCookie = function(seconds)
+    var setCookie = function(years)
     {
       var expires = new Date();
-      expires.setTime(expires.getTime()+(seconds*1000));
+      expires.setTime(expires.getTime()+(years*365*24*60*60*1000));
       document.cookie = 'newsletter-bar=hide; expires=' + expires.toGMTString();
     };
 
     $('#newsletter-bar-quit').on('click', function(event) {
         event.preventDefault();
-        setCookie(10);
-        $('.newsletter-bar').hide();
+        setCookie(100);
+        $('.newsletter-bar').fadeOut(180);
     });
 
     $('#newsletter-form').on('submit', function(event) {
       event.preventDefault();
       var email = $(this).children('input').val().trim();
-      setCookie(10);
-      $('.newsletter-bar').hide();
+      setCookie(100);
+      $('.newsletter-bar').fadeOut(180);
+      alert("Pomyślnie zapisano na newsletter.");
     });
 
   });

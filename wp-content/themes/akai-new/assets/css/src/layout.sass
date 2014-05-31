@@ -266,22 +266,52 @@ body.admin-bar
 // Newsletter bar
 
 .newsletter-bar
-  position: fixed !important
+  position: fixed
+  display: none
   width: 100%
-  background-color: $blue
   bottom: 0
-  height: 52px
-  display: table
   z-index: 10
-  padding: 4px
   .content
-    width: 200px
+    background-color: $blue
+    height: 52px
+    width: 100%
+    padding: 4px
     color: #fff
-    display: table-cell
-    vertical-align: middle
-  .text-input
-    color: $medium-gray
-    padding: 5px
-    background-color: rgba(#fff,1)
-  i:hover
-    color: $orange
+    display: table
+    .content-left
+      display: table-cell
+      text-align: center
+      vertical-align: middle
+      width: 98%
+      form
+        margin: 0
+        padding: 0
+        display: inline
+      input
+        padding: 5px
+        color: #000
+        max-width: 300px
+        display: inline-block
+        border-radius: 0
+        outline: 0
+        border: 0
+        margin: 10px
+      button#newsletter-submit
+        padding: 8px
+        border: 0
+        border-radius: 0
+        outline: 0
+        box-shadow: none
+        background: $orange
+    .content-right
+      font-size: 20px
+      display: table-cell
+      vertical-align: middle
+      width: 2%
+    .text-input
+      color: $medium-gray
+      padding: 5px
+      background-color: rgba(#fff,1)
+    i:hover
+      color: $orange
+      cursor: pointer

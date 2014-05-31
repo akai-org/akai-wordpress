@@ -13,16 +13,17 @@
     </div>
   </div>
   
-  <div class="newsletter-bar">
+  <div id="newsletter-bar">
     <div class="content">
       <div class="content-left">
         Chcesz być na bieżąco informowany o naszych wydarzeniach? Wpisz się na listę: 
-        <form action="#" id="newsletter-form">
-          <input placeholder="Twój Email" type="text" /> <button id="newsletter-submit">Wyślij</button>
+        <form id="js-newsletter-form">
+          <input type="email" placeholder="Twój adres e-mail" name="email" />
+          <button type="submit">Wyślij</button>
         </form>
       </div>
       <div class="content-right">
-        <i id="newsletter-bar-quit" class="fa fa-times"></i>
+        <i class="fa fa-times js-newsletter-quit-button"></i>
       </div>
     </div>
   </div>

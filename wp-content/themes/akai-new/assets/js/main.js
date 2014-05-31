@@ -1,4 +1,4 @@
-/*! AKAI New - v0.1.0 - 2014-05-31
+/*! AKAI New - v0.1.0 - 2014-06-01
  * http://akai.org.pl
  * Copyright (c) 2014; * Licensed GPLv2+ */
 // See http://www.advancedcustomfields.com/resources/field-types/google-map/ for more info.
@@ -172,30 +172,43 @@ document.addEventListener('DOMContentLoaded', function(){
   menuToggleButton.addEventListener('click', toggleMenu);
   menuToggleButton.addEventListener('touchend', toggleMenu);
 
-  if(document.cookie.indexOf("newsletter-bar") < 0)
-    $('.newsletter-bar').show();
-
+  // Newsletter form
   $(document).ready(function(){
+    var $newsletterBar = $('#newsletter-bar');
 
-    var setCookie = function(years)
-    {
+    if(document.cookie.indexOf("newsletter-bar") === -1) {
+      $newsletterBar.show();
+
+      // Move a little bit to top if admin bar is shown on bottom
+      if ($("#wpadminbar").length > 0) {
+        $newsletterBar.css('bottom', '30px');
+      }
+    }
+
+    function setNewsletterCookie() {
       var expires = new Date();
-      expires.setTime(expires.getTime()+(years*365*24*60*60*1000));
+      expires.setTime(expires.getTime()+(365*24*60*60*1000));
       document.cookie = 'newsletter-bar=hide; expires=' + expires.toGMTString();
     };
 
-    $('#newsletter-bar-quit').on('click', function(event) {
+    function hideNewsletterBar() {
+      setNewsletterCookie();
+      $newsletterBar.fadeOut(180);
+    }
+
+    $('.js-newsletter-quit-button').on('click', function(event) {
         event.preventDefault();
-        setCookie(100);
-        $('.newsletter-bar').fadeOut(180);
+
+        hideNewsletterBar();
     });
 
-    $('#newsletter-form').on('submit', function(event) {
+    $('#js-newsletter-form').on('submit', function(event) {
       event.preventDefault();
-      var email = $(this).children('input').val().trim();
-      setCookie(100);
-      $('.newsletter-bar').fadeOut(180);
-      alert("Pomyślnie zapisano na newsletter.");
+
+      var email = $(this).find('input[type="email"]').val().trim();
+      // TODO sth with email
+
+      hideNewsletterBar();
     });
 
   });

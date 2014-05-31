@@ -929,29 +929,29 @@ body.admin-bar {
   #wpadminbar .shortlink-input {
     bottom: 32px; }
 
-.newsletter-bar {
+#newsletter-bar {
   position: fixed;
   display: none;
   width: 100%;
   bottom: 0;
   z-index: 10; }
-  .newsletter-bar .content {
+  #newsletter-bar .content {
     background-color: #00263d;
     height: 52px;
     width: 100%;
     padding: 4px;
     color: white;
     display: table; }
-    .newsletter-bar .content .content-left {
+    #newsletter-bar .content .content-left {
       display: table-cell;
       text-align: center;
       vertical-align: middle;
       width: 98%; }
-      .newsletter-bar .content .content-left form {
+      #newsletter-bar .content .content-left form {
         margin: 0;
         padding: 0;
         display: inline; }
-      .newsletter-bar .content .content-left input {
+      #newsletter-bar .content .content-left input {
         padding: 5px;
         color: black;
         max-width: 300px;
@@ -960,23 +960,23 @@ body.admin-bar {
         outline: 0;
         border: 0;
         margin: 10px; }
-      .newsletter-bar .content .content-left button#newsletter-submit {
+      #newsletter-bar .content .content-left button[type="submit"] {
         padding: 8px;
         border: 0;
         border-radius: 0;
         outline: 0;
         box-shadow: none;
         background: #ffa70c; }
-    .newsletter-bar .content .content-right {
+    #newsletter-bar .content .content-right {
       font-size: 20px;
       display: table-cell;
       vertical-align: middle;
       width: 2%; }
-    .newsletter-bar .content .text-input {
+    #newsletter-bar .content .text-input {
       color: #898989;
       padding: 5px;
       background-color: white; }
-    .newsletter-bar .content i:hover {
+    #newsletter-bar .content i:hover {
       color: #ffa70c;
       cursor: pointer; }
 

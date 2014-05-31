@@ -12,6 +12,13 @@
 
     </div>
   </div>
+  
+  <div class="newsletter-bar">
+  <div class="content">
+    Jakiś tam tekst
+    <i id="newsletter-bar-quit" class="fa fa-times"></i>
+  </div>
+  </div>
 
   <footer class="site-footer">
     <div class="container">

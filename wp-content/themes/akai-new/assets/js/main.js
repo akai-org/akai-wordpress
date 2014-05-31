@@ -1,4 +1,4 @@
-/*! AKAI New - v0.1.0 - 2014-05-30
+/*! AKAI New - v0.1.0 - 2014-05-31
  * http://akai.org.pl
  * Copyright (c) 2014; * Licensed GPLv2+ */
 // See http://www.advancedcustomfields.com/resources/field-types/google-map/ for more info.
@@ -173,7 +173,12 @@ document.addEventListener('DOMContentLoaded', function(){
   menuToggleButton.addEventListener('touchend', toggleMenu);
 
   $(document).ready(function(){
-    console.log("jQuery is working!");
+
+    $('#newsletter-bar-quit').on('click', function(event) {
+        event.preventDefault();
+        $('.newsletter-bar').hide();
+    });
+
   });
 
  } )( this, jQuery );

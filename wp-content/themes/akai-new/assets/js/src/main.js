@@ -39,7 +39,12 @@
   menuToggleButton.addEventListener('touchend', toggleMenu);
 
   $(document).ready(function(){
-    console.log("jQuery is working!");
+
+    $('#newsletter-bar-quit').on('click', function(event) {
+        event.preventDefault();
+        $('.newsletter-bar').hide();
+    });
+
   });
 
  } )( this, jQuery );

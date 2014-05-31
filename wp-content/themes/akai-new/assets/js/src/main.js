@@ -38,11 +38,29 @@
   menuToggleButton.addEventListener('click', toggleMenu);
   menuToggleButton.addEventListener('touchend', toggleMenu);
 
+  if(document.cookie.indexOf("newsletter-bar") < 0)
+    $('.newsletter-bar').show();
+
   $(document).ready(function(){
+
+    var setCookie = function(seconds)
+    {
+      var expires = new Date();
+      expires.setTime(expires.getTime()+(seconds*1000));
+      document.cookie = 'newsletter-bar=hide; expires=' + expires.toGMTString();
+    };
 
     $('#newsletter-bar-quit').on('click', function(event) {
         event.preventDefault();
+        setCookie(10);
         $('.newsletter-bar').hide();
+    });
+
+    $('#newsletter-form').on('submit', function(event) {
+      event.preventDefault();
+      var email = $(this).children('input').val().trim();
+      setCookie(10);
+      $('.newsletter-bar').hide();
     });
 
   });

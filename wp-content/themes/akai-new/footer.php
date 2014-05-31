@@ -14,10 +14,17 @@
   </div>
   
   <div class="newsletter-bar">
-  <div class="content">
-    Jakiś tam tekst
-    <i id="newsletter-bar-quit" class="fa fa-times"></i>
-  </div>
+    <div class="content">
+      <div class="content-left">
+        Chcesz być na bieżąco informowany o naszych wydarzeniach? Wpisz się na listę: 
+        <form action="#" id="newsletter-form">
+          <input placeholder="Twój Email" type="text" /> <button id="newsletter-submit">Wyślij</button>
+        </form>
+      </div>
+      <div class="content-right">
+        <i id="newsletter-bar-quit" class="fa fa-times"></i>
+      </div>
+    </div>
   </div>
 
   <footer class="site-footer">

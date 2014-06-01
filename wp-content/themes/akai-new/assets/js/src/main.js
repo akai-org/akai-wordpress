@@ -79,10 +79,10 @@
         dataType: "json",
         data: "email=" + email,
         success: function(msg) {
-          console.log(msg);
+          alert("Zapisano do newslettera.");
         },
         error: function(err) {
-          console.log(err);
+          alert("Wystąpił błąd.");
         }
       });
       

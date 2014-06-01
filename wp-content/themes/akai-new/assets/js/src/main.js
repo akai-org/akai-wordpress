@@ -72,8 +72,20 @@
       event.preventDefault();
 
       var email = $(this).find('input[type="email"]').val().trim();
-      // TODO sth with email
-
+        
+      $.ajax({
+        url: "/wp-content/themes/akai-new/mailchimp.php",
+        type: "POST",
+        dataType: "json",
+        data: "email=" + email,
+        success: function(msg) {
+          console.log(msg);
+        },
+        error: function(err) {
+          console.log(err);
+        }
+      });
+      
       hideNewsletterBar();
     });
 

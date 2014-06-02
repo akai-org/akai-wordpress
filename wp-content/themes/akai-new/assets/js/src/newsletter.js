@@ -21,7 +21,7 @@
 
     this.$wrapper.find('.js-close-button').on('click', function(event) {
       event.preventDefault();
-      self.hide();
+      self.disable();
     });
 
     this.$wrapper.find('.js-back-button').on('click', function(event) {
@@ -85,7 +85,7 @@
         if (response.status != "error") {
           self.showMessage("Na Twój adres e-mail została wysłana prośba o zaakceptowanie newslettera.", true);
           setTimeout(function(){
-            self.hide();
+            self.disable();
           }, 3000);
         } else {
           self.showMessage(response.error);

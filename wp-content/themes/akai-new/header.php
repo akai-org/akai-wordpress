@@ -14,6 +14,9 @@
 
   <link rel="shortcut icon" href="<?php bloginfo('template_directory'); ?>/images/logo.png" />
 
+  <script type="text/javascript">
+  window.PATH = <?= json_encode(home_url("/")) ?>;
+  </script>
   <?php wp_head(); ?>
 </head>
 

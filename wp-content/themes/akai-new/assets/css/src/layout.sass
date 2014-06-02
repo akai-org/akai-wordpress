@@ -4,6 +4,7 @@ body
 
 .container
   +outer-container
+  position: relative
 
 .site-header
   text-align: center
@@ -265,57 +266,75 @@ body.admin-bar
 
 // Newsletter bar
 
+body.show-newsletter
+  padding-bottom: 52px
+
 #newsletter-bar
   position: fixed
   display: none
   width: 100%
   bottom: 0
   z-index: 10
-  .content
-    background-color: $blue
-    height: 52px
-    width: 100%
-    padding: 4px
-    color: #fff
-    display: table
-    .content-left
-      display: table-cell
-      text-align: center
-      vertical-align: middle
-      width: 98%
-      form
-        margin: 0
-        padding: 0
-        display: inline
-      input
-        padding: 5px
-        color: #000
-        max-width: 300px
-        display: inline-block
-        border-radius: 0
-        outline: 0
-        border: 0
-        margin: 10px
-      button[type="submit"]
-        padding: 8px
-        border: 0
-        border-radius: 0
-        outline: 0
-        box-shadow: none
-        background: $orange
-    .content-right
-      font-size: 20px
-      display: table-cell
-      vertical-align: middle
-      width: 2%
-    .text-input
-      color: $medium-gray
-      padding: 5px
-      background-color: rgba(#fff,1)
-    i:hover
-      color: $orange
-<<<<<<< HEAD
-      cursor: pointer
-=======
-      cursor: pointer
->>>>>>> upstream/master
+  background-color: $blue
+  color: #fff
+  padding: 10px
+  a
+    color: inherit
+
+
+  body.show-newsletter &
+    display: block
+
+  body.admin-bar &
+    bottom: 30px
+
+  .content-left
+    text-align: center
+    padding-right: 30px
+    form
+      margin: 0
+      padding: 0
+      display: inline
+    input
+      padding: 4px 8px
+      color: #000
+      width: 260px
+      display: inline-block
+      border-radius: 0
+      outline: 0
+      border: 0
+      margin: 0 10px
+    button[type="submit"]
+      margin-top: -4px
+
+  .content-right
+    position: absolute
+    right: 0
+    top: 0
+    font-size: 20px
+
+  .content-message
+    display: none
+
+  .message
+    margin: 5px 10px
+    display: inline-block
+    .btn
+      margin-top: -7px
+      margin-bottom: -7px
+
+  &.has-message
+    .content-form
+      display: none
+    .content-message
+      display: block
+
+  .text-input
+    color: $medium-gray
+    padding: 5px
+    background-color: rgba(#fff,1)
+    text-shadow: 0 -1px 0 rgba(0,0,0,.4)
+
+  i:hover
+    color: $orange
+    cursor: pointer

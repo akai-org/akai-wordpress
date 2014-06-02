@@ -613,7 +613,8 @@ dl {
   *zoom: 1;
   max-width: 68em;
   margin-left: auto;
-  margin-right: auto; }
+  margin-right: auto;
+  position: relative; }
   .container:before, .container:after {
     content: " ";
     display: table; }
@@ -929,56 +930,67 @@ body.admin-bar {
   #wpadminbar .shortlink-input {
     bottom: 32px; }
 
+body.show-newsletter {
+  padding-bottom: 52px; }
+
 #newsletter-bar {
   position: fixed;
   display: none;
   width: 100%;
   bottom: 0;
-  z-index: 10; }
-  #newsletter-bar .content {
-    background-color: #00263d;
-    height: 52px;
-    width: 100%;
-    padding: 4px;
-    color: white;
-    display: table; }
-    #newsletter-bar .content .content-left {
-      display: table-cell;
-      text-align: center;
-      vertical-align: middle;
-      width: 98%; }
-      #newsletter-bar .content .content-left form {
-        margin: 0;
-        padding: 0;
-        display: inline; }
-      #newsletter-bar .content .content-left input {
-        padding: 5px;
-        color: black;
-        max-width: 300px;
-        display: inline-block;
-        border-radius: 0;
-        outline: 0;
-        border: 0;
-        margin: 10px; }
-      #newsletter-bar .content .content-left button[type="submit"] {
-        padding: 8px;
-        border: 0;
-        border-radius: 0;
-        outline: 0;
-        box-shadow: none;
-        background: #ffa70c; }
-    #newsletter-bar .content .content-right {
-      font-size: 20px;
-      display: table-cell;
-      vertical-align: middle;
-      width: 2%; }
-    #newsletter-bar .content .text-input {
-      color: #898989;
-      padding: 5px;
-      background-color: white; }
-    #newsletter-bar .content i:hover {
-      color: #ffa70c;
-      cursor: pointer; }
+  z-index: 10;
+  background-color: #00263d;
+  color: white;
+  padding: 10px; }
+  #newsletter-bar a {
+    color: inherit; }
+  body.show-newsletter #newsletter-bar {
+    display: block; }
+  body.admin-bar #newsletter-bar {
+    bottom: 30px; }
+  #newsletter-bar .content-left {
+    text-align: center;
+    padding-right: 30px; }
+    #newsletter-bar .content-left form {
+      margin: 0;
+      padding: 0;
+      display: inline; }
+    #newsletter-bar .content-left input {
+      padding: 4px 8px;
+      color: black;
+      width: 260px;
+      display: inline-block;
+      border-radius: 0;
+      outline: 0;
+      border: 0;
+      margin: 0 10px; }
+    #newsletter-bar .content-left button[type="submit"] {
+      margin-top: -4px; }
+  #newsletter-bar .content-right {
+    position: absolute;
+    right: 0;
+    top: 0;
+    font-size: 20px; }
+  #newsletter-bar .content-message {
+    display: none; }
+  #newsletter-bar .message {
+    margin: 5px 10px;
+    display: inline-block; }
+    #newsletter-bar .message .btn {
+      margin-top: -7px;
+      margin-bottom: -7px; }
+  #newsletter-bar.has-message .content-form {
+    display: none; }
+  #newsletter-bar.has-message .content-message {
+    display: block; }
+  #newsletter-bar .text-input {
+    color: #898989;
+    padding: 5px;
+    background-color: white;
+    text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.4); }
+  #newsletter-bar i:hover {
+    color: #ffa70c;
+    cursor: pointer; }
 
 .btn {
   margin: 0 0.2em; }
@@ -999,8 +1011,11 @@ body.admin-bar {
   text-decoration: none;
   text-shadow: 0 1px 0 #af7000;
   background-clip: padding-box;
+  background: #ffa70c;
+  font-size: 14px;
+  border-radius: 0;
   padding: 0.4em 0.8em;
-  color: #00263d; }
+  color: white; }
   .btn-orange:hover:not(:disabled) {
     box-shadow: inset 0 1px 0 0 #f7ae2d;
     cursor: pointer;
@@ -1015,7 +1030,7 @@ body.admin-bar {
     opacity: 0.5;
     cursor: not-allowed; }
   .btn-orange:hover {
-    color: white; }
+    text-decoration: underline; }
 
 .btn-blue {
   border: 1px solid black;

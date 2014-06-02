@@ -14,16 +14,24 @@
   </div>
   
   <div id="newsletter-bar">
-    <div class="content">
-      <div class="content-left">
-        Chcesz być na bieżąco informowany o naszych wydarzeniach? Wpisz się na listę: 
-        <form id="js-newsletter-form">
+    <div class="container">
+      <div class="content-left content-form">
+        <div class="message">
+          Chcesz być na bieżąco informowany o naszych wydarzeniach? Wpisz się na listę: 
+        </div>
+        <form>
           <input type="email" placeholder="Twój adres e-mail" name="email" />
-          <button type="submit">Wyślij</button>
+          <button type="submit" class="btn btn-orange">Wyślij</button>
         </form>
       </div>
+      <div class="content-left content-message">
+        <div class="message">
+          <span class="js-message-content">Here be dragons.</span>
+          <a href="#" class="btn btn-orange js-back-button">Wróć</a>
+        </div>
+      </div>
       <div class="content-right">
-        <i class="fa fa-times js-newsletter-quit-button"></i>
+        <i class="fa fa-times js-close-button"></i>
       </div>
     </div>
   </div>

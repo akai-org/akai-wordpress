@@ -53,7 +53,7 @@ include 'includes/template_tags.php';
  function akai_scripts_styles() {
 	$postfix = ( defined( 'SCRIPT_DEBUG' ) && true === SCRIPT_DEBUG ) ? '' : '.min';
 
-	wp_enqueue_script( 'akai', get_template_directory_uri() . "/assets/js/main{$postfix}.js", [], AKAI_VERSION, true );
+	wp_enqueue_script( 'akai', get_template_directory_uri() . "/assets/js/main{$postfix}.js", ['jquery'], AKAI_VERSION, true );
 		
 	// wp_enqueue_style( 'akai', get_template_directory_uri() . "/assets/css/main{$postfix}.css", [], AKAI_VERSION );
  }

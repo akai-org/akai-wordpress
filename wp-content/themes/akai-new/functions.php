@@ -1,7 +1,7 @@
 <?php
  
 // Useful global constants
-define('AKAI_VERSION', '1.0.2a');
+define('AKAI_VERSION', '1.0.2c');
 define('SCRIPT_DEBUG', true);
 
 define('EVENTS_CATEGORY_ID', 5);

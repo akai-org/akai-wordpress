@@ -1106,10 +1106,13 @@ img[class^="wp-image-"], img[class*=" wp-image-"] {
 
 .entry-content ul, .entry-content ol {
   margin-left: 1.4em;
-  padding-left: 1em;
-  list-style-type: circle; }
+  padding-left: 1em; }
   .entry-content ul li, .entry-content ol li {
     margin: 0.75em 0; }
+.entry-content ul {
+  list-style-type: circle; }
+.entry-content ol {
+  list-style-type: decimal; }
 .entry-content a {
   text-decoration: underline;
   color: #00263d; }

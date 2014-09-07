@@ -1,4 +1,4 @@
-/*! AKAI New - v0.1.0 - 2014-06-28
+/*! AKAI New - v0.1.0 - 2014-09-06
  * http://akai.org.pl
  * Copyright (c) 2014; * Licensed GPLv2+ */
 // See http://www.advancedcustomfields.com/resources/field-types/google-map/ for more info.

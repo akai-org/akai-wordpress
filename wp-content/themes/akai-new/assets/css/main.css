@@ -1120,6 +1120,10 @@ img[class^="wp-image-"], img[class*=" wp-image-"] {
     text-decoration: none;
     color: #00263d; }
 
+.entry-thumbnail img {
+  width: auto;
+  height: auto; }
+
 .entry-header .simplesocialbuttons {
   display: -webkit-inline-box;
   display: -moz-inline-box;

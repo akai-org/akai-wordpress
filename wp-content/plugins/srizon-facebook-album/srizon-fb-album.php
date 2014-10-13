@@ -7,6 +7,17 @@ Version: 1.2.3
 Author: Afzal
 Author URI: http://www.srizon.com/contact
 */
+
+// AKAI EDIT: START
+// We disabled update notificatino for this plugin because we placed in some custom edits.
+// Look for "AKAI EDIT" string in this plugin, to find them.
+add_filter('site_transient_update_plugins', 'remove_srizon_facebook_album_plugin_update_notification');
+function remove_srizon_facebook_album_plugin_update_notification($value) {
+ unset($value->response[ plugin_basename(__FILE__) ]);
+ return $value;
+}
+// AKAI EDIT: END
+
 require_once 'srizon-fb-ui.php';
 require_once 'srizon-fb-db.php';
 if(file_exists(dirname(__FILE__).'/srizon-fb-album-front-pro.php')){

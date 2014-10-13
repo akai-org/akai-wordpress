@@ -60,6 +60,11 @@ function srz_fb_render_fullpage($album,$images,$common_options){
 	$jf_start = $getjfpage*$album['paginatenum'];
 	$jf_end = min($totimg,($jf_start+$album['paginatenum']));
 	$imgboxclass = ($album['tpltheme']=='white')? 'imgboxblack':'imgboxwhite';
+
+  // AKAI EDIT: START
+  $album_url = "https://www.facebook.com/media/set/?set=a.{$album["albumid"]}";
+  // AKAI EDIT: END
+
 	for($j=$jf_start;$j<$jf_end;$j++){
 		$image = $images[$j];
 		$output.= '<div class="imgboxouter">';
@@ -70,7 +75,10 @@ function srz_fb_render_fullpage($album,$images,$common_options){
 		$part2 = substr($thumb_img,$last_slash);
 		$thumb_img = $part1.'/p206x206'.$part2;
 
-		$link = '<a class="aimg" style="width:'.$album['thumbwidth'].'px; height:'.$album['thumbheight'].'px;" href="'. $image['src'].'" title="'.  nl2br($image['txt']).'" '.$common_options['lightboxattrib'].'>';
+    // AKAI EDIT: START
+    // (we changed href attribute from $image['src'] into $album_url)
+		$link = '<a class="aimg" style="width:'.$album['thumbwidth'].'px; height:'.$album['thumbheight'].'px;" href="'. $album_url .'" title="'.  nl2br($image['txt']).'" '.$common_options['lightboxattrib'].'>';
+    // AKAI EDIT: END
 		$imgcode = 'style="width:'.$album['thumbwidth'].'px; height:'.$album['thumbheight'].'px; background-image: url('.$thumb_img.');"';
 		$output.= $link.'<div class="'.$imgboxclass.'" '.$imgcode.'></div></a>';
 		$output.= '</div>';

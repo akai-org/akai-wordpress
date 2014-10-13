@@ -1144,6 +1144,20 @@ img[class^="wp-image-"], img[class*=" wp-image-"] {
   .entry-header .simplesocialbuttons .simplesocialbutton {
     display: inline-block; }
 
+.jfbalbum {
+  text-align: center;
+  margin: 0 -5px; }
+  .jfbalbum .imgboxouter {
+    display: inline-block;
+    margin: 5px; }
+    .jfbalbum .imgboxouter .aimg {
+      width: auto !important;
+      height: auto !important;
+      display: inline-block; }
+    .jfbalbum .imgboxouter .imgboxblack {
+      width: 202px !important;
+      height: 202px !important; }
+
 .events-container {
   *zoom: 1;
   display: block; }

@@ -38,6 +38,27 @@
         <?php the_field('presentation'); ?>
       </section>
     <?php endif ?>
+
+    <?php if (($fb_album_id = get_field("fb_album_id")) && function_exists("srz_fb_render_fullpage")): ?>
+      <div class="entry-gallery">
+        <h3>Zdjęcia</h3>
+
+        <?php 
+        $album = [
+          "albumid" => $fb_album_id,
+          "shuffle_images" => false,
+          "updatefeed" => 60 * 24,
+          "paginatenum" => 999,
+          "thumbwidth" => 202,
+          "thumbheight" => 202
+        ];
+        $images = srz_fb_get_album_api($album['albumid'], $album['shuffle_images'], $album['updatefeed'] * 60);
+        $common_options = SrizonFBDB::GetCommonOpt();
+
+        echo srz_fb_render_fullpage($album, $images, $common_options);
+        ?>
+      </div>
+    <?php endif ?>
   </section>
 
   <aside class="column sidebar">

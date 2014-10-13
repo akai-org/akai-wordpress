@@ -8,6 +8,10 @@ define('EVENTS_CATEGORY_ID', 5);
 define('RSS_LINK', 'http://feeds.feedburner.com/feedburner/akai-main');
 
 
+// Disable enqueueing of unnecessary styles and scripts from srizon-facebook-album plugin.
+remove_action('wp_enqueue_scripts', 'srz_fb_enqueue_script');
+
+
 include 'includes/template_tags.php';
  
 

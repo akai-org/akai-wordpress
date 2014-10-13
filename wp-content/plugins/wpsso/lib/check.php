@@ -15,8 +15,12 @@ if ( ! class_exists( 'WpssoCheck' ) ) {
 		private $p;
 		private $active_plugins;
 		private $network_plugins;
-		private static $a = false;
-		private static $n = false;
+		private static $aop = false;
+		private static $mac = array(
+			'seo' => array(
+				'seou' => 'SEO Ultimate',
+			),
+		);
 
 		public function __construct( &$plugin ) {
 			$this->p =& $plugin;
@@ -27,7 +31,7 @@ if ( ! class_exists( 'WpssoCheck' ) ) {
 			$this->active_plugins = get_option( 'active_plugins', array() ); 
 			if ( is_multisite() ) {
 				$this->network_plugins = array_keys( get_site_option( 'active_sitewide_plugins', array() ) );
-				if ( $this->network_plugins )
+				if ( ! empty( $this->network_plugins ) )
 					$this->active_plugins = array_merge( $this->active_plugins, $this->network_plugins );
 			}
 
@@ -45,7 +49,7 @@ if ( ! class_exists( 'WpssoCheck' ) ) {
 				if ( is_object( $wpseo_og ) && ( $prio = has_action( 'wpseo_head', array( $wpseo_og, 'opengraph' ) ) ) )
 					$ret = remove_action( 'wpseo_head', array( $wpseo_og, 'opengraph' ), $prio );
 
-				if ( ! empty( $this->p->options['tc_enable'] ) ) {
+				if ( ! empty( $this->p->options['tc_enable'] ) && $this->aop() ) {
 					global $wpseo_twitter;
 					if ( is_object( $wpseo_twitter ) && ( $prio = has_action( 'wpseo_head', array( $wpseo_twitter, 'twitter' ) ) ) )
 						$ret = remove_action( 'wpseo_head', array( $wpseo_twitter, 'twitter' ), $prio );
@@ -65,7 +69,7 @@ if ( ! class_exists( 'WpssoCheck' ) ) {
 				}
 			}
 
-			// disable the ngfb open graph+ meta tags
+			// disable the ngfb meta tags
 			if ( class_exists( 'Ngfb' ) || 
 				in_array( 'nextgen-facebook/nextgen-facebook.php', $this->active_plugins ) )
 					if ( ! defined( 'NGFB_META_TAGS_DISABLE' ) )
@@ -97,10 +101,9 @@ if ( ! class_exists( 'WpssoCheck' ) ) {
 				file_exists( WPSSO_PLUGINDIR.'lib/opengraph.php' ) &&
 				class_exists( $this->p->cf['lca'].'opengraph' ) ? true : false;
 
-			$ret['aop'] = self::$a = ( ! defined( 'WPSSO_PRO_ADDON_DISABLE' ) ||
+			$ret['aop'] = self::$aop = ( ! defined( 'WPSSO_PRO_ADDON_DISABLE' ) ||
 				( defined( 'WPSSO_PRO_ADDON_DISABLE' ) && ! WPSSO_PRO_ADDON_DISABLE ) ) &&
-				file_exists( WPSSO_PLUGINDIR.'lib/pro/addon.php' ) &&
-				class_exists( $this->p->cf['lca'].'addonpro' ) ? true : false;
+				file_exists( WPSSO_PLUGINDIR.'lib/pro/head/twittercard.php' ) ? true : false;
 
 			foreach ( $this->p->cf['cache'] as $name => $val ) {
 				$constant_name = 'WPSSO_'.strtoupper( $name ).'_CACHE_DISABLE';
@@ -108,29 +111,27 @@ if ( ! class_exists( 'WpssoCheck' ) ) {
 					constant( $constant_name ) ? false : true;
 			}
 
-			$more_avail_checks = array(
-				'seo' => array(
-					'seou' => 'SEO Ultimate',
-				), 
-			);
-
-			foreach ( SucomUtil::array_merge_recursive_distinct( $this->p->cf['lib']['pro'], $more_avail_checks ) as $sub => $libs ) {
+			foreach ( SucomUtil::array_merge_recursive_distinct( $this->p->cf['*']['lib']['pro'], self::$mac ) as $sub => $lib ) {
 				$ret[$sub] = array();
 				$ret[$sub]['*'] = false;
-				foreach ( $libs as $id => $name ) {
+				foreach ( $lib as $id => $name ) {
 					$chk = array();
 					$ret[$sub][$id] = false;	// default value
 					switch ( $sub.'-'.$id ) {
 						/*
 						 * 3rd Party Plugins
 						 */
-						case 'ecom-woocommerce':
-							$chk['class'] = 'Woocommerce';
-							$chk['plugin'] = 'woocommerce/woocommerce.php';
+						case 'ecom-edd':
+							$chk['class'] = 'Easy_Digital_Downloads'; 
+							$chk['plugin'] = 'easy-digital-downloads/easy-digital-downloads.php';
 							break;
 						case 'ecom-marketpress':
 							$chk['class'] = 'MarketPress'; 
 							$chk['plugin'] = 'wordpress-ecommerce/marketpress.php';
+							break;
+						case 'ecom-woocommerce':
+							$chk['class'] = 'Woocommerce';
+							$chk['plugin'] = 'woocommerce/woocommerce.php';
 							break;
 						case 'ecom-wpecommerce':
 							$chk['class'] = 'WP_eCommerce';
@@ -158,6 +159,10 @@ if ( ! class_exists( 'WpssoCheck' ) ) {
 							$chk['class'] = 'All_in_One_SEO_Pack';
 							$chk['plugin'] = 'all-in-one-seo-pack/all-in-one-seo-pack.php';
 							break;
+						case 'seo-headspace2':
+							$chk['class'] = 'HeadSpace_Plugin';
+							$chk['plugin'] = 'headspace2/headspace.php';
+							break;
 						case 'seo-seou':
 							$chk['class'] = 'SEO_Ultimate';
 							$chk['plugin'] = 'seo-ultimate/seo-ultimate.php';
@@ -176,6 +181,9 @@ if ( ! class_exists( 'WpssoCheck' ) ) {
 						case 'head-twittercard':
 							$chk['optval'] = 'tc_enable';
 							break;
+						case 'media-gravatar':
+							$chk['optval'] = 'plugin_gravatar_api';
+							break;
 						case 'media-slideshare':
 							$chk['optval'] = 'plugin_slideshare_api';
 							break;
@@ -191,7 +199,9 @@ if ( ! class_exists( 'WpssoCheck' ) ) {
 						case 'admin-general':
 						case 'admin-advanced':
 						case 'admin-postmeta':
+						case 'admin-user':
 						case 'util-postmeta':
+						case 'util-user':
 							$ret[$sub]['*'] = $ret[$sub][$id] = true;
 							break;
 						case 'util-language':
@@ -201,8 +211,10 @@ if ( ! class_exists( 'WpssoCheck' ) ) {
 					if ( ( ! empty( $chk['function'] ) && function_exists( $chk['function'] ) ) || 
 						( ! empty( $chk['class'] ) && class_exists( $chk['class'] ) ) ||
 						( ! empty( $chk['plugin'] ) && in_array( $chk['plugin'], $this->active_plugins ) ) ||
-						( ! empty( $chk['optval'] ) && ! empty( $this->p->options[$chk['optval']] ) ) )
-							$ret[$sub]['*'] = $ret[$sub][$id] = true;
+						( ! empty( $chk['optval'] ) && 
+							! empty( $this->p->options[$chk['optval']] ) && 
+							$this->p->options[$chk['optval']] !== 'none' ) )
+								$ret[$sub]['*'] = $ret[$sub][$id] = true;
 				}
 			}
 
@@ -242,20 +254,29 @@ if ( ! class_exists( 'WpssoCheck' ) ) {
 				if ( ! empty( $opts['opengraph'] ) ) {
 					$this->p->debug->log( $conflict_log_prefix.'wpseo opengraph meta data option is enabled' );
 					$this->p->notice->err( $conflict_err_prefix.
-						sprintf( __( 'Please uncheck the \'<em>Open Graph meta data</em>\' Facebook option in the <a href="%s">Yoast WordPress SEO plugin Social settings</a>.', WPSSO_TEXTDOM ), 
+						sprintf( __( 'Please uncheck the \'<em>Add Open Graph meta data</em>\' Facebook option in the '.
+							'<a href="%s">Yoast WordPress SEO: Social</a> settings.', WPSSO_TEXTDOM ), 
 							get_admin_url( null, 'admin.php?page=wpseo_social' ) ) );
 				}
-				if ( ! empty( $this->p->options['tc_enable'] ) && ! empty( $opts['twitter'] ) ) {
+				if ( ! empty( $this->p->options['tc_enable'] ) && $this->aop() && ! empty( $opts['twitter'] ) ) {
 					$this->p->debug->log( $conflict_log_prefix.'wpseo twitter meta data option is enabled' );
 					$this->p->notice->err( $conflict_err_prefix.
-						sprintf( __( 'Please uncheck the \'<em>Twitter Card meta data</em>\' Twitter option in the <a href="%s">Yoast WordPress SEO plugin Social settings</a>.', WPSSO_TEXTDOM ), 
+						sprintf( __( 'Please uncheck the \'<em>Add Twitter Card meta data</em>\' Twitter option in the '.
+							'<a href="%s">Yoast WordPress SEO: Social</a> settings.', WPSSO_TEXTDOM ), 
 							get_admin_url( null, 'admin.php?page=wpseo_social' ) ) );
 				}
-
+				if ( ! empty( $opts['googleplus'] ) ) {
+					$this->p->debug->log( $conflict_log_prefix.'wpseo googleplus meta data option is enabled' );
+					$this->p->notice->err( $conflict_err_prefix.
+						sprintf( __( 'Please uncheck the \'<em>Add Google+ specific post meta data</em>\' Google+ option in the '.
+							'<a href="%s">Yoast WordPress SEO: Social</a> settings.', WPSSO_TEXTDOM ), 
+							get_admin_url( null, 'admin.php?page=wpseo_social' ) ) );
+				}
 				if ( ! empty( $this->p->options['link_publisher_url'] ) && ! empty( $opts['plus-publisher'] ) ) {
 					$this->p->debug->log( $conflict_log_prefix.'wpseo google plus publisher option is defined' );
 					$this->p->notice->err( $conflict_err_prefix.
-						sprintf( __( 'Please remove the \'<em>Google Publisher Page</em>\' value entered in the <a href="%s">Yoast WordPress SEO plugin Social settings</a>.', WPSSO_TEXTDOM ), 
+						sprintf( __( 'Please remove the \'<em>Google Publisher Page</em>\' value entered in the '.
+							'<a href="%s">Yoast WordPress SEO: Social</a> settings.', WPSSO_TEXTDOM ), 
 							get_admin_url( null, 'admin.php?page=wpseo_social' ) ) );
 				}
 			}
@@ -267,7 +288,8 @@ if ( ! class_exists( 'WpssoCheck' ) ) {
 					if ( array_key_exists( 'opengraph', $opts['modules'] ) && $opts['modules']['opengraph'] !== -10 ) {
 						$this->p->debug->log( $conflict_log_prefix.'seo ultimate opengraph module is enabled' );
 						$this->p->notice->err( $conflict_err_prefix.
-							sprintf( __( 'Please disable the \'<em>Open Graph Integrator</em>\' module in the <a href="%s">SEO Ultimate plugin Module Manager</a>.', WPSSO_TEXTDOM ), 
+							sprintf( __( 'Please disable the \'<em>Open Graph Integrator</em>\' module in the '.
+								'<a href="%s">SEO Ultimate plugin Module Manager</a>.', WPSSO_TEXTDOM ), 
 								get_admin_url( null, 'admin.php?page=seo' ) ) );
 					}
 				}
@@ -276,35 +298,42 @@ if ( ! class_exists( 'WpssoCheck' ) ) {
 			// All in One SEO Pack
 			if ( $this->p->is_avail['seo']['aioseop'] === true ) {
 				$opts = get_option( 'aioseop_options' );
+				if ( ! empty( $opts['modules']['aiosp_feature_manager_options']['aiosp_feature_manager_enable_opengraph'] ) ) {
+					$this->p->debug->log( $conflict_log_prefix.'aioseop social meta fetaure is enabled' );
+					$this->p->notice->err( $conflict_err_prefix.
+						sprintf( __( 'Please deactivate the \'<em>Social Meta</em>\' feature in the '.
+							'<a href="%s">All in One SEO Pack Feature Manager</a>.', NGFB_TEXTDOM ), 
+							get_admin_url( null, 'admin.php?page=all-in-one-seo-pack/aioseop_feature_manager.php' ) ) );
+				}
 				if ( array_key_exists( 'aiosp_google_disable_profile', $opts ) && empty( $opts['aiosp_google_disable_profile'] ) ) {
 					$this->p->debug->log( $conflict_log_prefix.'aioseop google plus profile is enabled' );
 					$this->p->notice->err( $conflict_err_prefix.
-						sprintf( __( 'Please check the \'<em>Disable Google Plus Profile</em>\' option in the <a href="%s">All in One SEO Pack Plugin Options</a>.', WPSSO_TEXTDOM ), 
+						sprintf( __( 'Please check the \'<em>Disable Google Plus Profile</em>\' option in the '.
+							'<a href="%s">All in One SEO Pack Plugin Options</a>.', WPSSO_TEXTDOM ), 
 							get_admin_url( null, 'admin.php?page=all-in-one-seo-pack/aioseop_class.php' ) ) );
 				}
 			}
 
 			// JetPack Photon
-			if ( $this->p->is_avail['media']['photon'] === true && ! $this->is_aop() ) {
+			if ( $this->p->is_avail['media']['photon'] === true && ! $this->aop() ) {
+				$purchase_url = $this->p->cf['plugin'][$this->p->cf['lca']]['url']['purchase'];
 				$this->p->debug->log( $conflict_log_prefix.'jetpack photon is enabled' );
 				$this->p->notice->err( $conflict_err_prefix.
 					sprintf( __( 'JetPack Photon cripples the WordPress image size funtions. ', WPSSO_TEXTDOM ).
-						__( 'Please <a href="%s">disable JetPack Photon</a> or <a href="%s">upgrade to the %s version</a>
-							(which includes support for JetPack Photon).', WPSSO_TEXTDOM ), 
-						get_admin_url( null, 'admin.php?page=jetpack' ),
-						$this->p->cf['url']['purchase'],
-						$this->p->cf['full_pro'] ) );
+						__( 'Please <a href="%s">disable JetPack Photon</a>, disable the %s Free version, 
+						or <a href="%s">upgrade to the %s version</a> (that includes a 3rd party addon for Photon).', NGFB_TEXTDOM ), 
+						get_admin_url( null, 'admin.php?page=jetpack' ), $short, $purchase_url, $short_pro ) );
 			}
 
 			/*
 			 * Other Conflicting Plugins
 			 */
 
-			// NGFB Open Graph+
+			// NextGEN Facebook (NGFB)
 			if ( class_exists( 'Ngfb' ) || in_array( 'nextgen-facebook/nextgen-facebook.php', $this->active_plugins ) ) {
-                                $this->p->debug->log( $conflict_log_prefix.'ngfbog plugin is active' );
+                                $this->p->debug->log( $conflict_log_prefix.'NGFB plugin is active' );
                                 $this->p->notice->err( $conflict_err_prefix. 
-					sprintf( __( 'Please <a href="%s">deactivate the NGFB Open Graph+ plugin</a> to prevent duplicate and conflicting features.', WPSSO_TEXTDOM ), 
+					sprintf( __( 'Please <a href="%s">deactivate the NextGEN Facebook (NGFB) plugin</a> to prevent duplicate and conflicting features.', WPSSO_TEXTDOM ), 
 						get_admin_url( null, 'plugins.php' ) ) );
                         }
 
@@ -317,17 +346,6 @@ if ( ! class_exists( 'WpssoCheck' ) ) {
 						__( 'The WooCommerce ShareYourCart Extension does not provide an option to turn off its Open Graph meta tags.', WPSSO_TEXTDOM ).' '.
 						sprintf( __( 'Please disable the extension on the <a href="%s">ShareYourCart Integration Tab</a>.', WPSSO_TEXTDOM ), 
 							get_admin_url( null, 'admin.php?page=woocommerce&tab=integration&section=shareyourcart' ) ) );
-				}
-			}
-
-			// Wordbooker
-			if ( function_exists( 'wordbooker_og_tags' ) ) {
-				$opts = get_option( 'wordbooker_settings' );
-				if ( empty( $opts['wordbooker_fb_disable_og'] ) ) {
-					$this->p->debug->log( $conflict_log_prefix.'wordbooker opengraph is enabled' );
-					$this->p->notice->err( $conflict_err_prefix.
-						sprintf( __( 'Please check the \'<em>Disable in-line production of OpenGraph Tags</em>\' option on the <a href="%s">Wordbooker Options Page</a>.', WPSSO_TEXTDOM ), 
-							get_admin_url( null, 'options-general.php?page=wordbooker' ) ) );
 				}
 			}
 
@@ -362,11 +380,18 @@ if ( ! class_exists( 'WpssoCheck' ) ) {
 			}
 		}
 
-		public function is_aop() {
-			return ( ! empty( $this->p->options['plugin_tid'] ) &&
-				self::$a && class_exists( 'SucomUpdate' ) &&
-				( $u = SucomUpdate::get_umsg( $this->p->cf['lca'] ) ?
-					self::$n : self::$a ) ) ? $u : self::$n;
+		public function is_aop( $lca = '' ) { return $this->aop( $lca ); }
+
+		public function aop( $lca = '', $active = true ) {
+			$lca = empty( $lca ) ? $this->p->cf['lca'] : $lca;
+			$uca = strtoupper( $lca );
+			$installed = ( defined( $uca.'_PLUGINDIR' ) &&
+				is_dir( constant( $uca.'_PLUGINDIR' ).'lib/pro/' ) ) ? true : false;
+			return $active === true ? ( ( ! empty( $this->p->options['plugin_'.$lca.'_tid'] ) && 
+				$installed && class_exists( 'SucomUpdate' ) &&
+					( $umsg = SucomUpdate::get_umsg( $lca ) ? 
+						false : $installed ) ) ? 
+							$umsg : false ) : $installed;
 		}
 	}
 }

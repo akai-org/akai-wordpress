@@ -20,7 +20,47 @@ if ( ! class_exists( 'WpssoHead' ) ) {
 			$this->p->util->add_plugin_filters( $this, array( 
 				'head_cache_salt' => 2,		// modify the cache salt for certain crawlers
 			) );
+			add_filter( 'language_attributes', array( &$this, 'add_doctype' ) );
 			add_action( 'wp_head', array( &$this, 'add_header' ), WPSSO_HEAD_PRIORITY );
+		}
+
+		public function add_doctype( $doctype ) {
+			$obj = $this->p->util->get_post_object( false );
+			$post_id = empty( $obj->ID ) || empty( $obj->post_type ) ? 0 : $obj->ID;
+			$post_type = '';
+			$item_type = 'Blog';	// default value for non-singular webpages
+			if ( is_singular() ) {
+				if ( ! empty( $obj->post_type ) )
+					$post_type = $obj->post_type;
+				switch ( $post_type ) {
+					case 'article':
+					case 'book':
+					case 'blog':
+					case 'event':
+					case 'organization':
+					case 'person':
+					case 'product':
+					case 'review':
+					case 'other':
+						$item_type = ucfirst( $post_type );
+						break;
+					case 'local.business':
+						$item_type = 'LocalBusiness';
+						break;
+					default:
+						$item_type = 'Article';
+						break;
+				}
+			} elseif ( ( ! is_search() && ! empty( $this->p->options['og_def_author_on_index'] ) && ! empty( $this->p->options['og_def_author_id'] ) ) || 
+				( is_search() && ! empty( $this->p->options['og_def_author_on_search'] ) && ! empty( $this->p->options['og_def_author_id'] ) ) )
+					$item_type = 'Article';
+
+			$item_type = apply_filters( $this->p->cf['lca'].'_item_type', $item_type );
+
+			if ( strpos( $doctype, ' itemscope itemtype="http://schema.org/' ) === false )
+				$doctype .= ' itemscope itemtype="http://schema.org/'.$item_type.'"';
+
+			return $doctype;
 		}
 
 		public function filter_head_cache_salt( $salt, $use_post = false ) {
@@ -42,6 +82,7 @@ if ( ! class_exists( 'WpssoHead' ) ) {
 					'is_archive',
 					'is_category',
 					'is_tag',
+					'is_tax',
 					'is_home',
 					'is_search',
 					'is_singular',
@@ -55,6 +96,7 @@ if ( ! class_exists( 'WpssoHead' ) ) {
 					if ( function_exists( $function ) && $function() )
 						$this->p->debug->log( $function.'() = true' );
 			}
+
 			if ( $this->p->is_avail['metatags'] ) {
 				echo $this->get_header_html();
 			} else echo "\n<!-- ".$this->p->cf['lca']." meta tags are disabled -->\n";
@@ -68,10 +110,9 @@ if ( ! class_exists( 'WpssoHead' ) ) {
 				$opts = $this->p->options;
 				foreach ( $opts as $key => $val ) {
 					switch ( true ) {
-						case ( strpos( $key, 'buttons_css_' ) !== false ):
-						case ( strpos( $key, 'buttons_js_' ) !== false ):
-						case ( preg_match( '/_key$/', $key ) ):
-						case ( $key === 'plugin_tid' ):
+						case ( strpos( $key, '_css_' ) !== false ):
+						case ( strpos( $key, '_js_' ) !== false ):
+						case ( preg_match( '/_(key|tid)$/', $key ) ):
 							$opts[$key] = '********';
 					}
 				}
@@ -80,200 +121,221 @@ if ( ! class_exists( 'WpssoHead' ) ) {
 				$this->p->debug->show_html( null, 'debug log' );
 				$this->p->debug->show_html( $opts, 'wpsso settings' );
 
-				if ( ( $obj = $this->p->util->get_the_object() ) !== false ) {
-					$post_id = empty( $obj->ID ) ? 0 : $obj->ID;
+				// on singular webpages, show the custom social settings
+				if ( is_singular() && ( $obj = $this->p->util->get_post_object() ) !== false ) {
+					$post_id = empty( $obj->ID ) || empty( $obj->post_type ) ? 0 : $obj->ID;
 					if ( ! empty( $post_id ) && isset( $this->p->addons['util']['postmeta'] ) ) {
 						$post_opts = $this->p->addons['util']['postmeta']->get_options( $post_id );
-						$this->p->debug->show_html( $post_opts, 'wpsso post_id '.$post_id.' custom settings' );
+						$this->p->debug->show_html( $post_opts, 'wpsso post_id '.$post_id.' social settings' );
 					}
 				}
 			}
 		}
 
-		// called from add_header() and the work/header.php template
-		// input array should be from transient cache
-		public function get_header_html( $use_post = false, $read_cache = true ) {
-			$html = false;
-			$sharing_url = $this->p->util->get_sharing_url( $use_post );
-			$obj = $this->p->util->get_the_object( $use_post );
-			$post_id = empty( $obj->ID ) ? 0 : $obj->ID;
-			$author_id = 0;
+		public function get_header_html( $use_post = false, $read_cache = true, &$meta_og = array() ) {
+			$html = "\n<!-- ".$this->p->cf['lca']." meta tags begin -->\n";
+			foreach ( $this->get_header_array( $use_post, $read_cache, $meta_og ) as $val )
+				if ( isset( $val[0] ) )
+					$html .= $val[0];
+			$html .= "<!-- ".$this->p->cf['lca']." meta tags end -->\n";
+			return $html;
+		}
 
+		public function get_header_array( $use_post = false, $read_cache = true, &$meta_og = array() ) {
+			$this->p->debug->mark();
+			$lca = $this->p->cf['lca'];
+			$short_aop = $this->p->cf['plugin'][$lca]['short'].
+				( $this->p->is_avail['aop'] ? ' Pro' : '' );
+			$obj = $this->p->util->get_post_object( $use_post );
+			$post_id = empty( $obj->ID ) || empty( $obj->post_type ) || 
+				( ! is_singular() && $use_post === false ) ? 0 : $obj->ID;
+			$sharing_url = $this->p->util->get_sharing_url( $use_post );
+			$author_id = false;
+
+			$header_array = array();
 			if ( $this->p->is_avail['cache']['transient'] ) {
-				$cache_salt = __METHOD__.'('.apply_filters( $this->p->cf['lca'].'_head_cache_salt', 
+				$cache_salt = __METHOD__.'('.apply_filters( $lca.'_head_cache_salt', 
 					'lang:'.SucomUtil::get_locale().'_post:'.$post_id.'_url:'.$sharing_url, $use_post ).')';
-				$cache_id = $this->p->cf['lca'].'_'.md5( $cache_salt );
+				$cache_id = $lca.'_'.md5( $cache_salt );
 				$cache_type = 'object cache';
 				$this->p->debug->log( $cache_type.': transient salt '.$cache_salt );
-				if ( $read_cache ) {
-					$html = get_transient( $cache_id );
-					if ( $html !== false ) {
-						$this->p->debug->log( $cache_type.': html retrieved from transient '.$cache_id );
-						return $html;
+				if ( apply_filters( $lca.'_header_read_cache', $read_cache ) ) {
+					$header_array = get_transient( $cache_id );
+					if ( $header_array !== false ) {
+						$this->p->debug->log( $cache_type.': header array retrieved from transient '.$cache_id );
+						return $header_array;
 					}
 				}
 			}
 
 			/**
-			 * Define an author_id, if possible
+			 * Define an author_id, if one is available
 			 */
 			if ( is_singular() || $use_post !== false ) {
 				if ( ! empty( $obj->post_author ) )
 					$author_id = $obj->post_author;
 				elseif ( ! empty( $this->p->options['seo_def_author_id'] ) )
 					$author_id = $this->p->options['seo_def_author_id'];
+
+			} elseif ( is_author() || ( is_admin() && ( $screen = get_current_screen() ) && ( $screen->id === 'user-edit' || $screen->id === 'profile' ) ) ) {
+				$author = $this->p->util->get_author_object();
+				$author_id = $author->ID;
+
 			} elseif ( ( ! ( is_singular() || $use_post !== false ) && 
 				! is_search() && ! empty( $this->p->options['seo_def_author_on_index'] ) && ! empty( $this->p->options['seo_def_author_id'] ) ) || 
-					( is_search() && ! empty( $this->p->options['seo_def_author_on_search'] ) && ! empty( $this->p->options['seo_def_author_id'] ) ) )
-						$author_id = $this->p->options['seo_def_author_id'];
+				( is_search() && ! empty( $this->p->options['seo_def_author_on_search'] ) && ! empty( $this->p->options['seo_def_author_id'] ) ) )
+					$author_id = $this->p->options['seo_def_author_id'];
+
+			if ( $author_id !== false )
+				$this->p->debug->log( 'author_id value set to '.$author_id );
 
 			/**
-			 * Open Graph and Twitter Card meta tags
+			 * Open Graph, Twitter Card
+			 *
+			 * The Twitter Card meta tags are added by the WpssoHeadTwittercard class using an 'wpsso_og' filter hook.
 			 */
 			if ( $this->p->is_avail['opengraph'] )
-				$meta_og = $this->p->og->get_array( $use_post );
+				$meta_og = $this->p->og->get_array( $meta_og, $use_post );
+
+			/**
+			 * Name / SEO meta tags
+			 */
+			$meta_name = array();
+			if ( isset( $this->p->options['seo_author_name'] ) && 
+				$this->p->options['seo_author_name'] !== 'none' )
+					$meta_name['author'] = $this->p->addons['util']['user']->get_author_name( $author_id, $this->p->options['seo_author_name'] );
+
+			$meta_name['description'] = $this->p->webpage->get_description( $this->p->options['seo_desc_len'], 
+				'...', $use_post, true, false, true, 'seo_desc' );	// add_hashtags = false, custom meta = seo_desc
+
+			$meta_name = apply_filters( $lca.'_meta_name', $meta_name, $use_post );
+
+			/**
+			 * Link relation tags
+			 */
+			$link_rel = array();
+			if ( ! empty( $author_id ) )
+				$link_rel['author'] = $this->p->addons['util']['user']->get_author_website_url( $author_id, $this->p->options['link_author_field'] );
+
+			if ( ! empty( $this->p->options['link_publisher_url'] ) )
+				$link_rel['publisher'] = $this->p->options['link_publisher_url'];
+
+			$link_rel = apply_filters( $lca.'_link_rel', $link_rel, $use_post );
 
 			/**
 			 * Schema meta tags
 			 */
 			$meta_schema = array();
-			if ( isset( $meta_og['og:description'] ) )
-				$meta_schema['description'] = $meta_og['og:description'];
 
-			$meta_schema = apply_filters( $this->p->cf['lca'].'_meta_schema', $meta_schema );
+			$meta_schema['description'] = $this->p->webpage->get_description( $this->p->options['og_desc_len'], 
+				'...', $use_post, true, true, true, 'schema_desc' );	// custom meta = schema_desc
 
-			/**
-			 * Link Relation tags
-			 */
-			$link_rel = array();
-			if ( ! empty( $this->p->options['link_publisher_url'] ) )
-				$link_rel['publisher'] = $this->p->options['link_publisher_url'];
-
-			if ( ! empty( $author_id ) )
-				$link_rel['author'] = $this->p->user->get_author_url( $author_id, $this->p->options['link_author_field'] );
-
-			$link_rel = apply_filters( $this->p->cf['lca'].'_link_rel', $link_rel );
+			$meta_schema = apply_filters( $lca.'_meta_schema', $meta_schema, $use_post );
 
 			/**
-			 * Additional meta name / property tags
+			 * Combine and return all meta tags
 			 */
-			if ( ! empty( $this->p->options['add_meta_name_author'] ) && ! isset( $meta_og['author'] ) )
-				$meta_og['author'] = $this->p->user->get_author_name( $author_id, $this->p->options['seo_author_name'] );
-
-			if ( ! empty( $this->p->options['add_meta_name_description'] ) && ! isset( $meta_og['description'] ) ) {
-				if ( ! empty( $post_id ) && ( is_singular() || $use_post !== false ) )
-					$meta_og['description'] = $this->p->addons['util']['postmeta']->get_options( $post_id, 'seo_desc' );
-
-				if ( empty( $meta_og['description'] ) )
-					$meta_og['description'] = $this->p->webpage->get_description( $this->p->options['seo_desc_len'], '...',
-						$use_post, true, false );	// use_post = false, use_cache = true, add_hashtags = false
+			$header_array = array_merge(
+				$this->get_single_tag( 'meta', 'name', 'generator',
+					$short_aop.' '.$this->p->cf['plugin'][$lca]['version'].
+						( $this->p->check->aop() ? 'L' : 
+							( $this->p->is_avail['aop'] ? 'U' : 'G' ) ), '', $use_post ),
+				$this->get_tag_array( 'link', 'rel', $link_rel, $use_post ),
+				$this->get_tag_array( 'meta', 'name', $meta_name, $use_post ),
+				$this->get_tag_array( 'meta', 'itemprop', $meta_schema, $use_post ),
+				$this->get_tag_array( 'meta', 'property', $meta_og, $use_post )
+			);
+ 
+			if ( apply_filters( $lca.'_header_set_cache', $this->p->is_avail['cache']['transient'] ) ) {
+				set_transient( $cache_id, $header_array, $this->p->cache->object_expire );
+				$this->p->debug->log( $cache_type.': header array saved to transient '.$cache_id.' ('.$this->p->cache->object_expire.' seconds)');
 			}
-			$meta_og = apply_filters( $this->p->cf['lca'].'_meta_og', $meta_og );
-
-			/**
-			 * Print all the link and meta arrays as HTML
-			 */
-			$html = "\n<!-- ".$this->p->cf['lca']." meta tags begin -->\n";
-			if ( $this->p->is_avail['aop'] )
-				$html .= "<!-- updates: ".$this->p->cf['url']['pro_update']." -->\n";
-
-			$html .= '<meta name="generator" content="'.$this->p->cf['full'].' '.$this->p->cf['version'];
-			if ( $this->p->check->is_aop() ) $html .= 'L';
-			elseif ( $this->p->is_avail['aop'] ) $html .= 'U';
-			else $html .= 'G';
-			$html .= '" />'."\n";
-
-			foreach ( $link_rel as $key => $val )
-				if ( ! empty( $val ) )
-					$html .= '<link rel="'.$key.'" href="'.$val.'" />'."\n";
-
-			$html .= $this->get_meta_for_type( 'itemprop', $meta_schema );
-			$html .= $this->get_meta_for_type( 'property', $meta_og );
-			$html .= "<!-- ".$this->p->cf['lca']." meta tags end -->\n";
-			$html = apply_filters( $this->p->cf['lca'].'_header_html', $html, $use_post );
-
-			if ( ! empty( $this->p->is_avail['cache']['transient'] ) ) {
-				set_transient( $cache_id, $html, $this->p->cache->object_expire );
-				$this->p->debug->log( $cache_type.': head html saved to transient '.$cache_id.' ('.$this->p->cache->object_expire.' seconds)');
-			}
-			return $html;
+			return $header_array;
 		}
 
-	
-		private function get_meta_for_type( $type = 'property', $meta ) {
-			$this->p->debug->log( count( $meta ).' meta '.$type.' to process' );
-			$this->p->debug->log( $meta );
-			$html = '';
-			foreach ( $meta as $f_name => $f_val ) {					// 1st-dimension array (associative)
+		/**
+		 * Loops through the arrays (1 to 3 dimensions) and calls get_single_tag() for each
+		 */
+		private function get_tag_array( $tag = 'meta', $type = 'property', $tag_array, $use_post = false ) {
+			$this->p->debug->log( count( $tag_array ).' '.$tag.' '.$type.' to process' );
+			$this->p->debug->log( $tag_array );
+			$ret = array();
+			if ( empty( $tag_array ) )
+				return $ret;
+			foreach ( $tag_array as $f_name => $f_val ) {					// 1st-dimension array (associative)
 				if ( is_array( $f_val ) ) {
-					if ( empty( $f_val ) )
-						$html .= $this->get_single_meta( $type, $f_name );	// possibly show an empty tag (depends on og_empty_tags value)
-					else {
-						foreach ( $f_val as $s_num => $s_val ) {		// 2nd-dimension array
-							if ( SucomUtil::is_assoc( $s_val ) ) {
-								ksort( $s_val );
-								foreach ( $s_val as $t_name => $t_val )	// 3rd-dimension array (associative)
-									$html .= $this->get_single_meta( $type, $t_name, $t_val, $f_name.':'.( $s_num + 1 ) );
-							} else $html .= $this->get_single_meta( $type, $f_name, $s_val, $f_name.':'.( $s_num + 1 ) );
-						}
+					foreach ( $f_val as $s_num => $s_val ) {			// 2nd-dimension array
+						if ( SucomUtil::is_assoc( $s_val ) ) {
+							ksort( $s_val );
+							foreach ( $s_val as $t_name => $t_val )		// 3rd-dimension array (associative)
+								$ret = array_merge( $ret, $this->get_single_tag( $tag, $type, $t_name, $t_val, $f_name.':'.( $s_num + 1 ), $use_post ) );
+						} else $ret = array_merge( $ret, $this->get_single_tag( $tag, $type, $f_name, $s_val, $f_name.':'.( $s_num + 1 ), $use_post ) );
 					}
-				} else $html .= $this->get_single_meta( $type, $f_name, $f_val );
+				} else $ret = array_merge( $ret, $this->get_single_tag( $tag, $type, $f_name, $f_val, '', $use_post ) );
 			}
-			return $html;
+			return $ret;
 		}
 
-		private function get_single_meta( $type = 'property', $prop_val, $content = '', $comment = '' ) {
+		private function get_single_tag( $tag = 'meta', $type = 'property', $name, $value = '', $comment = '', $use_post = false ) {
 
-			// known exceptions for the property $type
-			if ( $type === 'property' && 
-				( $prop_val === 'author' || $prop_val === 'description' || strpos( $prop_val, 'twitter:' ) === 0 ) )
+			// known exceptions for the 'property' $type
+			if ( $tag === 'meta' && $type === 'property' && 
+				( strpos( $name, 'twitter:' ) === 0 || strpos( $name, ':' ) === false ) )
 					$type = 'name';
 
-			$html = '';
-			$log_pre = 'meta '.$type.' '.$prop_val;
+			$ret = array();
+			$attr = $tag === 'link' ? 'href' : 'content';
+			$log_pre = $tag.' '.$type.' '.$name;
 
-			if ( empty( $this->p->options['add_meta_'.$type.'_'.$prop_val] ) ) {
-				$this->p->debug->log( $log_pre.' is disabled (skipped)' );
-				return $html;
+			if ( $value === '' || $value === null ) {	// allow for 0
+				$this->p->debug->log( $log_pre.' value is empty (skipped)' );
+				return $ret;
 
-			} elseif ( $content === -1 ) {
-				$this->p->debug->log( $log_pre.' is -1 (skipped)' );
-				return $html;
+			} elseif ( $value === -1 ) {	// -1 is reserved, meaning use the defaults - exclude, just in case
+				$this->p->debug->log( $log_pre.' value is -1 (skipped)' );
+				return $ret;
 
-			// ignore empty values, except for open graph (og, article, etc.) meta tags when og_empty_tags option is checked
-			} elseif ( ( $content === '' || $content === null ) && 
-				( preg_match( '/^description|twitter:/', $prop_val ) || 
-					empty( $this->p->options['og_empty_tags'] ) ) ) {
+			} elseif ( is_array( $value ) ) {
+				$this->p->debug->log( $log_pre.' value is an array (skipped)' );
+				return $ret;
 
-				$this->p->debug->log( $log_pre.' is empty (skipped)' );
-				return $html;
-
-			} elseif ( is_object( $content ) ) {
+			} elseif ( is_object( $value ) ) {
 				$this->p->debug->log( $log_pre.' value is an object (skipped)' );
-				return $html;
+				return $ret;
 			}
 
-			$charset = get_bloginfo( 'charset' );
-			$content = htmlentities( $content, ENT_QUOTES, $charset, false );	// double_encode = false
+			if ( strpos( $value, '%%' ) )
+				$value = $this->p->util->replace_inline_vars( $value, $use_post );
 
-			$this->p->debug->log( 'meta '.$type.' '.$prop_val.' = "'.$content.'"' );
-			if ( $comment ) 
-				$html .= "<!-- $comment -->";
+			$charset = get_bloginfo( 'charset' );
+			$value = htmlentities( $value, ENT_QUOTES, $charset, false );	// double_encode = false
+			$this->p->debug->log( $log_pre.' = "'.$value.'"' );
+			$comment_html = empty( $comment ) ? '' : '<!-- '.$comment.' -->';
 
 			// add an additional secure_url meta tag for open graph images and videos
-			if ( ( $prop_val === 'og:image' || $prop_val === 'og:video' ) && 
-				strpos( $content, 'https:' ) === 0 && 
-				! empty( $this->p->options['add_meta_'.$type.'_'.$prop_val.':secure_url'] ) ) {
+			if ( $tag === 'meta' && $type === 'property' && 
+				( $name === 'og:image' || $name === 'og:video' ) && 
+				strpos( $value, 'https:' ) === 0 ) {
 
-				$http_url = preg_replace( '/^https:/', 'http:', $content );
-				$html .= '<meta '.$type.'="'.$prop_val.'" content="'.$http_url.'" />'."\n";
-				if ( $comment ) 
-					$html .= "<!-- $comment -->";
-				$html .= '<meta '.$type.'="'.$prop_val.':secure_url" content="'.$content.'" />'."\n";
+				$secure_url = $value;
+				$value = preg_replace( '/^https:/', 'http:', $value );
 
-			} else $html .= '<meta '.$type.'="'.$prop_val.'" content="'.$content.'" />'."\n";
+				if ( empty( $this->p->options['add_'.$tag.'_'.$type.'_'.$name.':secure_url'] ) )
+					$this->p->debug->log( $log_pre.':secure_url is disabled (skipped)' );
+				else $ret[] = array( 
+					$comment_html.'<'.$tag.' '.$type.'="'.$name.':secure_url" '.$attr.'="'.$secure_url.'" />'."\n",
+					$tag, $type, $name.':secure_url', $attr, $secure_url, $comment
+				);
+			} 
+			
+			if ( empty( $this->p->options['add_'.$tag.'_'.$type.'_'.$name] ) )
+				$this->p->debug->log( $log_pre.' is disabled (skipped)' );
+			else $ret[] = array( 
+				$comment_html.'<'.$tag.' '.$type.'="'.$name.'" '.$attr.'="'.$value.'" />'."\n",
+				$tag, $type, $name, $attr, $value, $comment
+			);
 
-			return $html;
+			return $ret;
 		}
 	}
 }

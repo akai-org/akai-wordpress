@@ -12,32 +12,65 @@ if ( ! class_exists( 'WpssoOpengraph' ) && class_exists( 'SucomOpengraph' ) ) {
 
 	class WpssoOpengraph extends SucomOpengraph {
 
+		protected $size_name = '';
+
 		public function __construct( &$plugin ) {
 			$this->p =& $plugin;
-			$this->p->util->add_img_sizes_from_opts( array( 'og_img' => 'opengraph' ) );
+			$this->p->util->add_img_sizes_from_opts( array( 
+				'og_img' => 'opengraph',
+				'rp_img' => 'opengraph-rp',
+			) );
+			switch ( SucomUtil::crawler_name() ) {
+				case 'pinterest':
+					$this->size_name = $this->p->cf['lca'].'-opengraph-rp';
+					break;
+				default:
+					$this->size_name = $this->p->cf['lca'].'-opengraph';
+					break;
+			}
 			add_filter( 'language_attributes', array( &$this, 'add_doctype' ) );
 		}
 
 		public function add_doctype( $doctype ) {
-			return $doctype.' xmlns:og="http://ogp.me/ns#"'.
-				' xmlns:fb="http://ogp.me/ns/fb#"';
+			/*
+			 * HTML5 Compliant
+			 */
+			$html_prefix = array(
+				'og' => 'http://ogp.me/ns#',
+				'fb' => 'http://www.facebook.com/2008/fbml',
+			);
+	
+			// find and extract an existing prefix attribute value
+			if ( strpos( $doctype, ' prefix=' ) &&
+				preg_match( '/^(.*) prefix=["\']([^"\']*)["\'](.*)$/', $doctype, $match ) ) {
+					$doctype = $match[1].$match[3];
+					$attr_value = ' '.$match[2];
+			} else $attr_value = '';
+
+			foreach ( $html_prefix as $ns => $url )
+				if ( strpos( $attr_value, ' '.$ns.': '.$url ) === false )
+					$attr_value .= ' '.$ns.': '.$url;
+
+			$doctype .= ' prefix="'.trim( $attr_value ).'"';
+
+			return $doctype;
 		}
 
-		public function get_array( $use_post = false ) {
-			$obj = $this->p->util->get_the_object( $use_post );
-			$post_id = empty( $obj->ID ) ? 0 : $obj->ID;
+		public function get_array( &$og = array(), $use_post = false ) {
+			$obj = $this->p->util->get_post_object( $use_post );
+			$post_id = empty( $obj->ID ) || empty( $obj->post_type ) ? 0 : $obj->ID;
 			$post_type = '';
-			$has_video_image = false;
+			$video_images = 0;
 			$og_max = $this->p->util->get_max_nums( $post_id );
-			$og = apply_filters( $this->p->cf['lca'].'_og_seed', array(), $use_post );
+			$og = apply_filters( $this->p->cf['lca'].'_og_seed', $og, $use_post, $obj );
 
-			if ( ! array_key_exists( 'fb:admins', $og ) )
+			if ( ! isset( $og['fb:admins'] ) )
 				$og['fb:admins'] = $this->p->options['fb_admins'];
 
-			if ( ! array_key_exists( 'fb:app_id', $og ) )
+			if ( ! isset( $og['fb:app_id'] ) )
 				$og['fb:app_id'] = $this->p->options['fb_app_id'];
 
-			if ( ! array_key_exists( 'og:locale', $og ) ) {
+			if ( ! isset( $og['og:locale'] ) ) {
 				// get the current or configured language for og:locale
 				$lang = empty( $this->p->options['fb_lang'] ) ? 
 					SucomUtil::get_locale( $post_id ) : $this->p->options['fb_lang'];
@@ -48,7 +81,7 @@ if ( ! class_exists( 'WpssoOpengraph' ) && class_exists( 'SucomOpengraph' ) ) {
 				$og['og:locale'] = $lang;
 			}
 
-			if ( ! array_key_exists( 'og:site_name', $og ) ) {
+			if ( ! isset( $og['og:site_name'] ) ) {
 				// pass options array to allow fallback if locale option does not exist
 				$key = SucomUtil::get_locale_key( 'og_site_name', $this->p->options, $post_id );
 				if ( ! empty( $this->p->options[$key] ) )
@@ -56,19 +89,19 @@ if ( ! class_exists( 'WpssoOpengraph' ) && class_exists( 'SucomOpengraph' ) ) {
 				else $og['og:site_name'] = get_bloginfo( 'name', 'display' );
 			}
 
-			if ( ! array_key_exists( 'og:url', $og ) )
+			if ( ! isset( $og['og:url'] ) )
 				$og['og:url'] = $this->p->util->get_sharing_url( $use_post, true, 
 					$this->p->util->get_source_id( 'opengraph' ) );
 
-			if ( ! array_key_exists( 'og:title', $og ) )
+			if ( ! isset( $og['og:title'] ) )
 				$og['og:title'] = $this->p->webpage->get_title( $this->p->options['og_title_len'], '...', $use_post );
 
-			if ( ! array_key_exists( 'og:description', $og ) )
+			if ( ! isset( $og['og:description'] ) )
 				$og['og:description'] = $this->p->webpage->get_description( $this->p->options['og_desc_len'], '...', $use_post );
 
-			if ( ! array_key_exists( 'og:type', $og ) ) {
+			if ( ! isset( $og['og:type'] ) ) {
 
-				// singular posts/pages are articles by default
+				// singular posts / pages are articles by default
 				// check post_type for exceptions (like product pages)
 				if ( is_singular() || $use_post !== false ) {
 					if ( ! empty( $obj->post_type ) )
@@ -100,72 +133,73 @@ if ( ! class_exists( 'WpssoOpengraph' ) && class_exists( 'SucomOpengraph' ) ) {
 					( is_search() && ! empty( $this->p->options['og_def_author_on_search'] ) && ! empty( $this->p->options['og_def_author_id'] ) ) ) {
 	
 					$og['og:type'] = 'article';
-					if ( ! array_key_exists( 'article:author', $og ) )
-						$og['article:author'] = $this->p->user->get_article_author( $this->p->options['og_def_author_id'] );
+					if ( ! isset( $og['article:author'] ) )
+						$og['article:author'] = $this->p->addons['util']['user']->get_article_author( $this->p->options['og_def_author_id'] );
 
 				// default for everything else is 'website'
 				} else $og['og:type'] = 'website';
+
+				$og['og:type'] = apply_filters( $this->p->cf['lca'].'_og_type', $og['og:type'], $use_post );
 			}
 
 			// if the page is an article, then define the other article meta tags
-			if ( array_key_exists( 'og:type', $og ) && $og['og:type'] == 'article' ) {
+			if ( isset( $og['og:type'] ) && $og['og:type'] == 'article' ) {
 
-				if ( ( is_singular() || $use_post !== false ) && 
-					! array_key_exists( 'article:author', $og ) ) {
-
-					if ( ! empty( $obj->post_author ) )
-						$og['article:author'] = $this->p->user->get_article_author( $obj->post_author );
-					else {
-						$this->p->debug->log( 'post author property is empty' );
-						if ( ! empty( $this->p->options['og_def_author_id'] ) )
-							$og['article:author'] = $this->p->user->get_article_author( $this->p->options['og_def_author_id'] );
+				if ( ! isset( $og['article:author'] ) ) {
+					if ( is_singular() || $use_post !== false ) {
+						if ( ! empty( $obj->post_author ) )
+							$og['article:author'] = $this->p->addons['util']['user']->get_article_author( $obj->post_author );
+						elseif ( ! empty( $this->p->options['og_def_author_id'] ) )
+							$og['article:author'] = $this->p->addons['util']['user']->get_article_author( $this->p->options['og_def_author_id'] );
 					}
 				}
 
-				if ( ! array_key_exists( 'article:publisher', $og ) )
+				if ( ! isset( $og['article:publisher'] ) )
 					$og['article:publisher'] = $this->p->options['og_publisher_url'];
 
-				if ( ! array_key_exists( 'article:tag', $og ) )
+				if ( ! isset( $og['article:tag'] ) )
 					$og['article:tag'] = $this->p->webpage->get_tags( $post_id );
 
-				if ( ! array_key_exists( 'article:section', $og ) )
+				if ( ! isset( $og['article:section'] ) )
 					$og['article:section'] = $this->p->webpage->get_section( $post_id );
 
-				if ( ! array_key_exists( 'article:published_time', $og ) )
+				if ( ! isset( $og['article:published_time'] ) )
 					$og['article:published_time'] = trim( get_the_date('c') );
 
-				if ( ! array_key_exists( 'article:modified_time', $og ) )
+				if ( ! isset( $og['article:modified_time'] ) )
 					$og['article:modified_time'] = trim( get_the_modified_date('c') );
 			}
 
 			// get all videos
 			// check first, to add video preview images
-			if ( ! array_key_exists( 'og:video', $og ) ) {
+			if ( ! isset( $og['og:video'] ) ) {
 				if ( empty( $og_max['og_vid_max'] ) )
 					$this->p->debug->log( 'videos disabled: maximum videos = 0' );
 				else {
 					$og['og:video'] = $this->get_all_videos( $og_max['og_vid_max'], $post_id );
 					if ( is_array( $og['og:video'] ) ) {
-						foreach ( $og['og:video'] as $val ) {
-							if ( is_array( $val ) && ! empty( $val['og:image'] ) ) {
-								$this->p->debug->log( 'og:image found in og:video array (no default image required)' );
-								$has_video_image = true;
-							}
+						foreach ( $og['og:video'] as $val )
+							if ( is_array( $val ) && ! empty( $val['og:image'] ) )
+								$video_images++;
+						if ( $video_images > 0 ) {
+							$og_max['og_img_max'] -= $video_images;
+							$this->p->debug->log( $video_images.' video preview images found (og_img_max adjusted to '.$og_max['og_img_max'].')' );
 						}
 					}
 				} 
 			}
 
 			// get all images
-			if ( ! array_key_exists( 'og:image', $og ) ) {
+			if ( ! isset( $og['og:image'] ) ) {
 				if ( empty( $og_max['og_img_max'] ) ) 
 					$this->p->debug->log( 'images disabled: maximum images = 0' );
 				else {
-					$og['og:image'] = $this->get_all_images( $og_max['og_img_max'], 
-						$this->p->cf['lca'].'-opengraph', $post_id );
-					if ( empty( $og['og:image'] ) && $has_video_image === false )
-							$og['og:image'] = $this->p->media->get_default_image( $og_max['og_img_max'], 
-								$this->p->cf['lca'].'-opengraph' );
+					$og['og:image'] = $this->get_all_images( $og_max['og_img_max'], $this->size_name, $post_id );
+
+					// if there's no image, and no video preview image, then add the default image for non-index webpages
+					if ( empty( $og['og:image'] ) && $video_images === 0 &&
+						( is_singular() || $use_post !== false ) )
+							$og['og:image'] = $this->p->media->get_default_image( $og_max['og_img_max'], $this->size_name );
 				} 
 			}
 
@@ -184,7 +218,7 @@ if ( ! class_exists( 'WpssoOpengraph' ) && class_exists( 'SucomOpengraph' ) ) {
 			}
 
 			// twitter cards are hooked into this filter to use existing open graph values
-			return apply_filters( $this->p->cf['lca'].'_og', $og, $use_post );
+			return apply_filters( $this->p->cf['lca'].'_og', $og, $use_post, $obj );
 		}
 
 		public function get_all_videos( $num = 0, $post_id, $check_dupes = true ) {
@@ -193,6 +227,7 @@ if ( ! class_exists( 'WpssoOpengraph' ) && class_exists( 'SucomOpengraph' ) ) {
 
 			// check for index-type webpages with og_def_vid_on_index enabled to force a default video
 			if ( ( ! empty( $this->p->options['og_def_vid_on_index'] ) && ( is_home() || is_archive() ) && ! is_author() ) ||
+				( ! empty( $this->p->options['og_def_vid_on_author'] ) && is_author() ) ||
 				( ! empty( $this->p->options['og_def_vid_on_search'] ) && is_search() ) ) {
 
 				$num_remains = $this->p->media->num_remains( $og_ret, $num );
@@ -230,21 +265,34 @@ if ( ! class_exists( 'WpssoOpengraph' ) && class_exists( 'SucomOpengraph' ) ) {
 				// if an attachment is not an image, then use the default image instead
 				if ( empty( $og_ret ) ) {
 					$num_remains = $this->p->media->num_remains( $og_ret, $num );
-					$og_ret = array_merge( $og_ret, 
-						$this->p->media->get_default_image( $num_remains, $size_name, $check_dupes ) );
+					$og_ret = array_merge( $og_ret, $this->p->media->get_default_image( $num_remains, $size_name, $check_dupes ) );
 				} else $og_ret = array_merge( $og_ret, $og_image );
 
 				return $og_ret;
 			}
 
-			// check for index-type webpages with og_def_img_on_index enabled to force a default image
+			// check for index webpages with og_def_img_on_index or og_def_img_on_search enabled to force a default image
 			if ( ( ! empty( $this->p->options['og_def_img_on_index'] ) && ( is_home() || is_archive() ) && ! is_author() ) ||
+				( ! empty( $this->p->options['og_def_img_on_author'] ) && is_author() ) ||
 				( ! empty( $this->p->options['og_def_img_on_search'] ) && is_search() ) ) {
 
+				$this->p->debug->log( 'default image is forced' );
 				$num_remains = $this->p->media->num_remains( $og_ret, $num );
-				$og_ret = array_merge( $og_ret, 
-					$this->p->media->get_default_image( $num_remains, $size_name, $check_dupes ) );
+				$og_ret = array_merge( $og_ret, $this->p->media->get_default_image( $num_remains, $size_name, $check_dupes ) );
 				return $og_ret;	// stop here and return the image array
+			}
+
+			if ( is_author() || ( is_admin() && ( $screen = get_current_screen() ) && ( $screen->id === 'user-edit' || $screen->id === 'profile' ) ) ) {
+				if ( is_admin() )
+					$author_id = empty( $_GET['user_id'] ) ? get_current_user_id() : $_GET['user_id'];
+				else {
+					$author = get_query_var( 'author_name' ) ? 
+						get_user_by( 'slug', get_query_var( 'author_name' ) ) :
+						get_userdata( get_query_var( 'author' ) );
+					$author_id = $author->ID;
+				}
+				$num_remains = $this->p->media->num_remains( $og_ret, $num );
+				$og_ret = array_merge( $og_ret, $this->p->media->get_author_image( $num_remains, $size_name, $author_id, $check_dupes ) );
 			}
 
 			// check for custom meta, featured, or attached image(s)

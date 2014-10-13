@@ -13,9 +13,8 @@ if ( ! class_exists( 'SucomForm' ) ) {
 	class SucomForm {
 	
 		private $p;
-		private $options = array();
-		private $defaults = array();
-
+		public $options = array();
+		public $defaults = array();
 		public $options_name;
 
 		public function __construct( &$plugin, $opts_name, &$opts, &$def_opts ) {
@@ -50,7 +49,7 @@ if ( ! class_exists( 'SucomForm' ) ) {
 			return $html;
 		}
 
-		public function get_fake_checkbox( $name, $check = array( '1', '0' ), $class = '', $id = '' ) {
+		public function get_no_checkbox( $name, $check = array( 1, 0 ), $class = '', $id = '' ) {
 			return $this->get_checkbox( $name, $check, $class, $id, true );
 		}
 
@@ -77,29 +76,44 @@ if ( ! class_exists( 'SucomForm' ) ) {
 			return $html;
 		}
 
-		public function get_fake_radio( $name, $values = array(), $class = '', $id = '', $is_assoc = false ) {
+		public function get_no_radio( $name, $values = array(), $class = '', $id = '', $is_assoc = false ) {
 			return $this->get_radio( $name, $values, $class, $id, $is_assoc, true );
 		}
 
-		public function get_select( $name, $values = array(), $class = '', $id = '', $is_assoc = false ) {
-			if ( empty( $name ) || ! is_array( $values ) ) return;
-			if ( $is_assoc == false ) $is_assoc = SucomUtil::is_assoc( $values );
+		public function get_select( $name, $values = array(), $class = '', $id = '', $is_assoc = false, $disabled = false ) {
+			if ( empty( $name ) || ! is_array( $values ) ) 
+				return;
+			if ( $is_assoc === false ) 
+				$is_assoc = SucomUtil::is_assoc( $values );
 			$html = '<select name="'.$this->options_name.'['.$name.']"'.
 				( empty( $class ) ? '' : ' class="'.$class.'"' ).
-				( empty( $id ) ? '' : ' id="'.$id.'"' ).'>';
+				( empty( $id ) ? '' : ' id="'.$id.'"' ).
+				( $disabled === true ? ' disabled="disabled"' : '' ).'>';
 			foreach ( $values as $val => $desc ) {
 				// if the array is NOT associative (so regular numered array), 
 				// then the description is used as the saved value as well
-				if ( $is_assoc == false ) $val = $desc;
-				if ( $val == -1 ) $desc = '(value from settings)';
+				if ( $is_assoc == false ) 
+					$val = $desc;
+				if ( $val == -1 ) 
+					$desc = '(value from settings)';
 				else {
 					switch ( $name ) {
-						case 'og_img_max': if ( $desc === 0 ) $desc .= ' (no images)'; break;
-						case 'og_vid_max': if ( $desc === 0 ) $desc .= ' (no videos)'; break;
-						default: if ( $desc === '' || $desc === 'none' ) $desc = '[none]'; break;
+						case 'og_img_max': 
+							if ( $desc === 0 ) 
+								$desc .= ' (no images)'; 
+							break;
+						case 'og_vid_max': 
+							if ( $desc === 0 ) 
+								$desc .= ' (no videos)'; 
+							break;
+						default: 
+							if ( $desc === '' || $desc === 'none' ) 
+								$desc = '[none]'; 
+							break;
 					}
-					if ( $this->in_defaults( $name ) && $val == $this->defaults[$name] ) 
-						$desc .= ' (default)';
+					if ( $this->in_defaults( $name ) && 
+						$val === $this->defaults[$name] )
+							$desc .= ' (default)';
 				}
 				$html .= '<option value="'.esc_attr( $val ).'"';
 				if ( $this->in_options( $name ) )
@@ -146,7 +160,7 @@ if ( ! class_exists( 'SucomForm' ) ) {
 			if ( empty( $name ) ) return;	// just in case
 			if ( $this->in_options( $name.':is' ) && 
 				$this->options[$name.':is'] === 'disabled' )
-					return $this->get_fake_input( $name, $class, $id );
+					return $this->get_no_input( $name, $class, $id );
 			$html = '';
 			$value = $this->in_options( $name ) ? $this->options[$name] : '';
 			if ( ! empty( $len ) && ! empty( $id ) )
@@ -163,11 +177,14 @@ if ( ! class_exists( 'SucomForm' ) ) {
 			return $html;
 		}
 
-		public function get_fake_input( $name, $class = '', $id = '' ) {
-			return '<input type="text" disabled="disabled"'.
+		public function get_no_input( $name, $class = '', $id = '' ) {
+			$value = $this->in_options( $name ) ? $this->options[$name] : '';
+			$html = $this->get_hidden( $name ).
+				'<input type="text" disabled="disabled"'.
 				( empty( $class ) ? '' : ' class="'.$class.'"' ).
 				( empty( $id ) ? '' : ' id="'.$id.'"' ).
-				' value="'.esc_attr( $this->options[$name] ).'" />';
+				' value="'.esc_attr( $value ).'" />';
+			return $html;
 		}
 
 		public function get_textarea( $name, $class = '', $id = '', $len = 0, $placeholder = '' ) {
@@ -180,7 +197,7 @@ if ( ! class_exists( 'SucomForm' ) ) {
 				( empty( $class ) ? '' : ' class="'.$class.'"' ).
 				( empty( $id ) ? '' : ' id="'.$id.'"' ).
 				( empty( $len ) ? '' : ' maxLength="'.$len.'"' ).
-				( empty( $len ) && empty( $class ) ? '' : ' rows="'.round($len / 100).'"' ).
+				( empty( $len ) && empty( $class ) ? '' : ' rows="'.( round( $len / 100 ) + 1 ).'"' ).
 				( empty( $placeholder ) ? '' : ' placeholder="'.$placeholder.'"'.
 					' onFocus="if ( this.value == \'\' ) this.value = \''.esc_js( $placeholder ).'\';"'.
 					' onBlur="if ( this.value == \''.esc_js( $placeholder ).'\' ) this.value = \'\';"' ).
@@ -189,14 +206,16 @@ if ( ! class_exists( 'SucomForm' ) ) {
 		}
 
 		public function get_button( $value, $class = '', $id = '', $url = '', $newtab = false ) {
-			$js = $newtab == true ? 
-				"window.open('".$url."', '_blank');" :
-				"location.href='".$url."';";
+			$js = $newtab === true ? 
+				'window.open(\''.$url.'\', \'_blank\');' :
+				'location.href=\''.$url.'\';';
+
 			$html = '<input type="button" '.
 				( empty( $class ) ? '' : ' class="'.$class.'"' ).
 				( empty( $id ) ? '' : ' id="'.$id.'"' ).
 				( empty( $url ) ? '' : ' onClick="'.$js.'"' ).
 				' value="'.esc_attr( $value ).'" />';
+
 			return $html;
 		}
 
@@ -208,6 +227,14 @@ if ( ! class_exists( 'SucomForm' ) ) {
 				onFocus="this.select();" 
 				onMouseUp="return false;" />';
 			return $html;
+		}
+
+		public function get_options( $idx = false, $def_val = false ) {
+			if ( $idx !== false ) {
+				if ( isset( $this->options[$idx] ) )
+					return $this->options[$idx];
+				else return $def_val;
+			} else return $this->options;
 		}
 
 		private function in_options( $name ) {

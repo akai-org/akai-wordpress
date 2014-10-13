@@ -104,12 +104,14 @@ class SuextParseReadme {
 		$_sections = preg_split('/^[\s]*==[\s]*(.+?)[\s]*==/m', $file_contents, -1, PREG_SPLIT_DELIM_CAPTURE|PREG_SPLIT_NO_EMPTY);
 
 		$sections = array();
-		for ( $i=1; $i <= count($_sections); $i +=2 ) {
-			$_sections[$i] = preg_replace('/^[\s]*=[\s]+(.+?)[\s]+=/m', '<h4>$1</h4>', $_sections[$i]);
-			$_sections[$i] = $this->filter_text( $_sections[$i], true );
-			$_sections[$i] = preg_replace( '/\[youtube https:\/\/www\.youtube\.com\/watch\?v=([^\]]+)\]/', '<div class="video"><object width="532" height="325"><param name="movie" value="http://www.youtube.com/v/$1?fs=1"></param><param name="allowFullScreen" value="true"></param><param name="allowscriptaccess" value="never"></param><embed src="http://www.youtube.com/v/$1?fs=1" type="application/x-shockwave-flash" allowscriptaccess="never" allowfullscreen="true" width="532" height="325"></embed></object></div>', $_sections[$i] );
-			$title = $this->sanitize_text( $_sections[$i-1] );
-			$sections[str_replace(' ', '_', strtolower($title))] = array('title' => $title, 'content' => $_sections[$i]);
+		for ( $i = 1; $i <= count( $_sections ); $i += 2 ) {
+			if ( isset( $_sections[$i] ) ) {
+				$_sections[$i] = preg_replace('/^[\s]*=[\s]+(.+?)[\s]+=/m', '<h4>$1</h4>', $_sections[$i]);
+				$_sections[$i] = $this->filter_text( $_sections[$i], true );
+				$_sections[$i] = preg_replace( '/\[youtube https:\/\/www\.youtube\.com\/watch\?v=([^\]]+)\]/', '<div class="video"><object width="532" height="325"><param name="movie" value="http://www.youtube.com/v/$1?fs=1"></param><param name="allowFullScreen" value="true"></param><param name="allowscriptaccess" value="never"></param><embed src="http://www.youtube.com/v/$1?fs=1" type="application/x-shockwave-flash" allowscriptaccess="never" allowfullscreen="true" width="532" height="325"></embed></object></div>', $_sections[$i] );
+				$title = $this->sanitize_text( $_sections[$i-1] );
+				$sections[str_replace(' ', '_', strtolower($title))] = array('title' => $title, 'content' => $_sections[$i]);
+			}
 		}
 
 		$final_sections = array();
@@ -135,7 +137,8 @@ class SuextParseReadme {
 			$upgrade_notice = array();
 			$split = preg_split( '#<h4>(.*?)</h4>#', $final_sections['upgrade_notice'], -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY );
 			for ( $i = 0; $i < count( $split ); $i += 2 )
-				$upgrade_notice[$this->sanitize_text( $split[$i] )] = substr( $this->sanitize_text( $split[$i + 1] ), 0, 300 );
+				if ( isset( $split[$i + 1] ) )
+					$upgrade_notice[$this->sanitize_text( $split[$i] )] = substr( $this->sanitize_text( $split[$i + 1] ), 0, 300 );
 			unset( $final_sections['upgrade_notice'] );
 		} else { $upgrade_notice = ''; }
 
@@ -215,24 +218,42 @@ class SuextParseReadme {
 				'name' => array(),
 				'href' => array(),
 				'title' => array(),
-				'rel' => array()
+				'rel' => array(),
 			),
-			'blockquote' => array('cite' => array()),
+			'blockquote' => array(
+				'cite' => array(),
+			),
 			'br' => array(),
 			'p' => array(),
 			'code' => array(),
 			'pre' => array(),
 			'em' => array(),
+			'small' => array(),
 			'strong' => array(),
 			'ul' => array(),
 			'ol' => array(),
 			'li' => array(),
 			'h3' => array(),
-			'h4' => array()
+			'h4' => array(),
+			'font' => array(
+				'color' => array(),
+			),
+			'img' => array(
+				'src' => array(),
+				'alt' => array(),
+				'width' => array(),
+				'height' => array(),
+				'style' => array(),
+			),
+			'table' => array(),
+			'tr' => array(),
+			'th' => array(),
+			'td' => array(
+				'valign' => array(),
+			),
 		);
-		$text = balanceTags($text);
-		$text = wp_kses( $text, $allowed );
-		$text = trim($text);
+		$text = balanceTags( $text );
+		//$text = wp_kses( $text, $allowed );
 		return $text;
 	}
 

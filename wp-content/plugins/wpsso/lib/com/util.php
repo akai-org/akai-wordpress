@@ -13,14 +13,53 @@ if ( ! class_exists( 'SucomUtil' ) ) {
 	class SucomUtil {
 
 		private static $crawler_name = false;
-
 		private $urls_found = array();	// array to detect duplicate images, etc.
+		private $inline_vars = array(
+			'%%post_id%%',
+			'%%request_url%%',
+			'%%sharing_url%%',
+		);
+		private $inline_vals = array();
 
 		protected $p;
 
 		public function __construct( &$plugin ) {
 			$this->p =& $plugin;
 			$this->p->debug->mark();
+		}
+
+		public function get_inline_vars() {
+			return $inline_vars;
+		}
+
+		public function get_inline_vals( $use_post = false, $obj = false ) {
+
+			if ( ! is_object( $obj ) ) {
+				if ( ( $obj = $this->get_post_object( $use_post ) ) === false ) {
+					$this->p->debug->log( 'exiting early: invalid object type' );
+					return $str;
+				}
+				$post_id = empty( $obj->ID ) || empty( $obj->post_type ) ? 0 : $obj->ID;
+			} else $post_id = $obj->ID;
+
+			$sharing_url = $this->get_sharing_url( $use_post );
+
+			if ( is_admin() )
+				$request_url = $sharing_url;
+			else $request_url = ( empty( $_SERVER['HTTPS'] ) ? 'http://' : 'https://' ).
+				$_SERVER['SERVER_NAME'].$_SERVER['REQUEST_URI'];
+
+			$this->inline_vals = array(
+				$post_id,		// %%post_id%%
+				$request_url,		// %%request_url%%
+				$sharing_url,		// %%sharing_url%%
+			);
+
+			return $this->inline_vals;
+		}
+
+		public function replace_inline_vars( $str, $use_post = false, $obj = false ) {
+			return str_replace( $this->inline_vars, $this->get_inline_vals( $use_post, $obj ), $str );
 		}
 
 		public static function crawler_name( $id = '' ) {
@@ -58,6 +97,18 @@ if ( ! class_exists( 'SucomUtil' ) ) {
 			else return self::$crawler_name;
 		}
 
+		public static function next_key( $needle, $arr, $cycle = true ) {
+			$keys = array_keys( $arr );
+			$pos = array_search( $needle, $keys );
+			if ( $pos !== false ) {
+				if ( isset( $keys[ $pos + 1 ] ) )
+					return $keys[ $pos + 1 ];
+				elseif ( $cycle === true )
+					return $keys[0];
+			}
+			return false;
+		}
+
 		public static function is_assoc( $arr ) {
 			if ( ! is_array( $arr ) ) 
 				return false;
@@ -91,7 +142,7 @@ if ( ! class_exists( 'SucomUtil' ) ) {
 			return $new_key;
 		}
 
-		public static function preg_grep_keys( $preg, $arr, $invert = false, $replace = false ) {
+		public static function preg_grep_keys( $preg, &$arr, $invert = false, $replace = false ) {
 			if ( ! is_array( $arr ) ) 
 				return false;
 			$invert = $invert == false ? 
@@ -161,12 +212,25 @@ if ( ! class_exists( 'SucomUtil' ) ) {
 			}
 		}
 
-		public function get_the_object( $use_post = false ) {
+		public function get_author_object() {
+			if ( is_author() ) {
+				return get_query_var( 'author_name' ) ? 
+					get_userdata( get_query_var( 'author' ) ) : 
+					get_user_by( 'slug', get_query_var( 'author_name' ) );
+			} elseif ( is_admin() ) {
+				$author_id = empty( $_GET['user_id'] ) ? get_current_user_id() : $_GET['user_id'];
+				return get_userdata( $author_id );
+			} else return false;
+		}
+
+		// on archives and taxonomies, this will return the first post object
+		public function get_post_object( $use_post = false ) {
 			$obj = false;
 			if ( $use_post === false ) {
 				$obj = get_queried_object();
-				// fallback to $post if object is empty
-				if ( ! isset( $obj->ID ) ) {
+
+				// fallback to $post if object is empty / invalid
+				if ( empty( $obj->ID ) || empty( $obj->post_type ) ) {
 					global $post; 
 					$obj = $post;
 				}
@@ -176,40 +240,28 @@ if ( ! class_exists( 'SucomUtil' ) ) {
 			} elseif ( is_numeric( $use_post ) ) 
 				$obj = get_post( $use_post );
 
-			$obj = apply_filters( $this->p->cf['lca'].'_the_object', $obj, $use_post );
+			$obj = apply_filters( $this->p->cf['lca'].'_get_post_object', $obj, $use_post );
+
 			if ( $obj === false || ! is_object( $obj ) )
 				return false;
 			else return $obj;
 		}
 
-		public function get_meta_sharing_url( $post_id ) {
-			$url = false;
-			if ( empty( $post_id ) || 
-				! array_key_exists( 'postmeta', $this->p->addons ) )
-					return $url;
-			$url = $this->p->addons['util']['postmeta']->get_options( $post_id, 'sharing_url' );
-			if ( ! empty( $url ) )
-				$this->p->debug->log( 'found custom meta sharing url = '.$url );
-			return $url;
-		}
-
-		// use_post = false when used for open graph meta tags and buttons in widget,
+		// "use_post = false" when used for open graph meta tags and buttons in widget,
 		// true when buttons are added to individual posts on an index webpage
-		// most of this code is from yoast wordpress seo, to try and match its canonical url value
-		public function get_sharing_url( $use_post = false, $add_page = true, $source_id = '' ) {
+		public function get_sharing_url( $use_post = false, $add_page = true, $source_id = false ) {
 			$url = false;
 			if ( is_singular() || $use_post !== false ) {
-				if ( ( $obj = $this->get_the_object( $use_post ) ) === false ) {
-					$this->p->debug->log( 'exiting early: invalid object type' );
+				if ( ( $obj = $this->get_post_object( $use_post ) ) === false )
 					return $url;
-				}
-				$post_id = empty( $obj->ID ) ? 0 : $obj->ID;
+				$post_id = empty( $obj->ID ) || empty( $obj->post_type ) ? 0 : $obj->ID;
 				if ( ! empty( $post_id ) ) {
-					$url = $this->get_meta_sharing_url( $post_id );
+					if ( isset( $this->p->addons['util']['postmeta'] ) )
+						$url = $this->p->addons['util']['postmeta']->get_options( $post_id, 'sharing_url' );
+					if ( ! empty( $url ) ) 
+						$this->p->debug->log( 'custom postmeta sharing_url = '.$url );
+					else $url = get_permalink( $post_id );
 
-					if ( empty( $url ) )
-						$url = get_permalink( $post_id );
-				
 					if ( $add_page && get_query_var( 'page' ) > 1 ) {
 						global $wp_rewrite;
 						$numpages = substr_count( $obj->post_content, '<!--nextpage-->' ) + 1;
@@ -224,9 +276,9 @@ if ( ! class_exists( 'SucomUtil' ) ) {
 			} else {
 				if ( is_search() )
 					$url = get_search_link();
-				elseif ( is_front_page() ) {
+				elseif ( is_front_page() )
 					$url = apply_filters( $this->p->cf['lca'].'_home_url', home_url( '/' ) );
-				} elseif ( $this->is_posts_page() )
+				elseif ( $this->is_posts_page() )
 					$url = get_permalink( get_option( 'page_for_posts' ) );
 				elseif ( is_tax() || is_tag() || is_category() ) {
 					$term = get_queried_object();
@@ -235,9 +287,16 @@ if ( ! class_exists( 'SucomUtil' ) ) {
 				}
 				elseif ( function_exists( 'get_post_type_archive_link' ) && is_post_type_archive() )
 					$url = get_post_type_archive_link( get_query_var( 'post_type' ) );
-				elseif ( is_author() )
-					$url = get_author_posts_url( get_query_var( 'author' ), get_query_var( 'author_name' ) );
-				elseif ( is_archive() ) {
+				elseif ( is_author() || ( is_admin() && ( $screen = get_current_screen() ) && ( $screen->id === 'user-edit' || $screen->id === 'profile' ) ) ) {
+					$author = $this->get_author_object();
+					if ( ! empty( $author->ID ) ) {
+						if ( isset( $this->p->addons['util']['user'] ) )
+							$url = $this->p->addons['util']['user']->get_options( $author->ID, 'sharing_url' );
+						if ( ! empty( $url ) ) 
+							$this->p->debug->log( 'custom user sharing_url = '.$url );
+						else $url = get_author_posts_url( $author->ID );
+					}
+				} elseif ( is_archive() ) {
 					if ( is_date() ) {
 						if ( is_day() )
 							$url = get_day_link( get_query_var( 'year' ), get_query_var( 'monthnum' ), get_query_var( 'day' ) );
@@ -264,7 +323,7 @@ if ( ! class_exists( 'SucomUtil' ) ) {
 			// fallback for themes and plugins that don't use the standard wordpress functions/variables
 			if ( empty ( $url ) ) {
 				$url = empty( $_SERVER['HTTPS'] ) ? 'http://' : 'https://';
-				$url .= $_SERVER["SERVER_NAME"].$_SERVER["REQUEST_URI"];
+				$url .= $_SERVER['SERVER_NAME'].$_SERVER['REQUEST_URI'];
 				// strip out tracking query arguments by facebook, google, etc.
 				$url = preg_replace( '/([\?&])(fb_action_ids|fb_action_types|fb_source|fb_aggregation_id|utm_source|utm_medium|utm_campaign|utm_term|gclid|pk_campaign|pk_kwd)=[^&]*&?/i', '$1', $url );
 			}
@@ -295,7 +354,7 @@ if ( ! class_exists( 'SucomUtil' ) ) {
 				elseif ( strpos( $url, '/' ) === 0 ) 
 					$url = home_url( $url );
 				else {
-					$base = $prot.$_SERVER["SERVER_NAME"].$_SERVER["REQUEST_URI"];
+					$base = $prot.$_SERVER['SERVER_NAME'].$_SERVER['REQUEST_URI'];
 					if ( strpos( $base, '?' ) !== false ) {
 						$base_parts = explode( '?', $base );
 						$base = reset( $base_parts );
@@ -337,11 +396,11 @@ if ( ! class_exists( 'SucomUtil' ) ) {
 			return mb_decode_numericentity( $entity, $convmap, 'UTF-8' );
 		}
 
-		public function limit_text_length( $text, $textlen = 300, $trailing = '' ) {
+		public function limit_text_length( $text, $textlen = 300, $trailing = '', $cleanup = true ) {
 			$charset = get_bloginfo( 'charset' );
-			$text = html_entity_decode( self::decode_utf8( $text ), ENT_QUOTES, $charset );
-			$text = preg_replace( '/<\/p>/i', ' ', $text);					// replace end of paragraph with a space
-			$text = $this->cleanup_html_tags( $text );					// remove any remaining html tags
+			if ( $cleanup === true )
+				$text = $this->cleanup_html_tags( $text );				// remove any remaining html tags
+			else $text = html_entity_decode( self::decode_utf8( $text ), ENT_QUOTES, $charset );
 			if ( $textlen > 0 ) {
 				if ( strlen( $trailing ) > $textlen )
 					$trailing = substr( $trailing, 0, $textlen );			// trim the trailing string, if too long
@@ -357,29 +416,82 @@ if ( ! class_exists( 'SucomUtil' ) ) {
 			return $text;
 		}
 
-		public function cleanup_html_tags( $text, $strip_tags = true ) {
-			$text = strip_shortcodes( $text );							// remove any remaining shortcodes
-			$text = preg_replace( '/[\r\n\t ]+/s', ' ', $text );					// put everything on one line
-			$text = preg_replace( '/<\?.*\?>/i', ' ', $text);					// remove php
-			$text = preg_replace( '/<script\b[^>]*>(.*?)<\/script>/i', ' ', $text);			// remove javascript
-			$text = preg_replace( '/<style\b[^>]*>(.*?)<\/style>/i', ' ', $text);			// remove inline stylesheets
+		public function cleanup_html_tags( $text, $strip_tags = true, $use_alt = false ) {
+			$alt_text = '';
+			$text = strip_shortcodes( $text );						// remove any remaining shortcodes
+			$text = html_entity_decode( $text, ENT_QUOTES, get_bloginfo( 'charset' ) );
+			$text = preg_replace( '/[\r\n\t ]+/s', ' ', $text );				// put everything on one line
+			$text = preg_replace( '/<\?.*\?>/i', ' ', $text);				// remove php
+			$text = preg_replace( '/<script\b[^>]*>(.*?)<\/script>/i', ' ', $text);		// remove javascript
+			$text = preg_replace( '/<style\b[^>]*>(.*?)<\/style>/i', ' ', $text);		// remove inline stylesheets
 			$text = preg_replace( '/<!--'.$this->p->cf['lca'].'-ignore-->(.*?)<!--\/'.
-				$this->p->cf['lca'].'-ignore-->/i', ' ', $text);				// remove text between comment strings
-			if ( $strip_tags == true ) 
-				$text = strip_tags( $text );							// remove remaining html tags
-			$text = preg_replace( '/  +/s', ' ', $text );						// truncate multiple spaces
+				$this->p->cf['lca'].'-ignore-->/i', ' ', $text);			// remove text between comment strings
+			if ( $strip_tags ) {
+				$text = preg_replace( '/<\/p>/i', ' ', $text);				// replace end of paragraph with a space
+				$text_stripped = trim( strip_tags( $text ) );				// remove remaining html tags
+				if ( $text_stripped === '' && $use_alt ) {				// possibly use img alt strings if no text
+					if ( strpos( $text, '<img ' ) !== false &&
+						preg_match_all( '/<img [^>]*alt=["\']([^"\'>]*)["\']/U', 
+							$text, $matches, PREG_PATTERN_ORDER ) ) {
+						foreach ( $matches[1] as $alt ) {
+							$alt = 'Image: '.trim( $alt );
+							$alt_text .= ( strpos( $alt, '.' ) + 1 ) === strlen( $alt ) ? $alt.' ' : $alt.'. ';
+						}
+						$this->p->debug->log( 'img alt text: '.$alt_text );
+					}
+					$text = $alt_text;
+				} else $text = $text_stripped;
+			}
+			$text = preg_replace( '/(\xC2\xA0|\s)+/s', ' ', $text );	// convert space-like chars to a single space
 			return trim( $text );
 		}
 
-		public function parse_readme( $expire_secs ) {
-			$this->p->debug->args( array( 'expire_secs' => $expire_secs ) );
-			$readme = '';
-			$get_remote = true;	// fetch readme from wordpress.org by default
-			$plugin_info = array();
+		public function get_remote_content( $url = '', $file = '', $version = '', $expire_secs = 86400 ) {
+			$content = false;
+			$get_remote = empty( $url ) ? false : true;
 
 			if ( $this->p->is_avail['cache']['transient'] ) {
-				$cache_salt = __METHOD__.'(file:'.$this->p->cf['url']['readme'].')';
+				$cache_salt = __METHOD__.'(url:'.$url.'_file:'.$file.'_version:'.$version.')';
 				$cache_id = $this->p->cf['lca'].'_'.md5( $cache_salt );
+				$cache_type = 'object cache';
+				$content = get_transient( $cache_id );
+				if ( $content !== false )
+					return $content;	// no need to save, return now
+			} else $get_remote = false;
+
+			if ( $get_remote === true && $expire_secs > 0 ) {
+				$content = $this->p->cache->get( $url, 'raw', 'file', $expire_secs );
+				if ( empty( $content ) )
+					$get_remote = false;
+			} else $get_remote = false;
+
+			if ( $get_remote === false && ! empty( $file ) && $fh = @fopen( $file, 'rb' ) ) {
+				$content = fread( $fh, filesize( $file ) );
+				fclose( $fh );
+			}
+
+			if ( $this->p->is_avail['cache']['transient'] )
+				set_transient( $cache_id, $content, $this->p->cache->object_expire );
+
+			return $content;
+		}
+
+		public function parse_readme( $lca, $expire_secs = 86400 ) {
+			$this->p->debug->args( array( 'lca' => $lca, 'expire_secs' => $expire_secs ) );
+			$plugin_info = array();
+			if ( ! defined( strtoupper( $lca ).'_PLUGINDIR' ) ) {
+				$this->p->debug->log( defined( strtoupper( $lca ).'_PLUGINDIR' ).' is undefined and required for readme.txt path' );
+				return $plugin_info;
+			}
+			$readme_txt = constant( strtoupper( $lca ).'_PLUGINDIR' ).'readme.txt';
+			$readme_url = isset( $this->p->cf['plugin'][$lca]['url']['readme'] ) ? 
+				$this->p->cf['plugin'][$lca]['url']['readme'] : '';
+			$get_remote = empty( $readme_url ) ? false : true;	// fetch readme from wordpress.org by default
+			$content = '';
+
+			if ( $this->p->is_avail['cache']['transient'] ) {
+				$cache_salt = __METHOD__.'(url:'.$readme_url.'_txt:'.$readme_txt.')';
+				$cache_id = $lca.'_'.md5( $cache_salt );
 				$cache_type = 'object cache';
 				$this->p->debug->log( $cache_type.': transient salt '.$cache_salt );
 				$plugin_info = get_transient( $cache_id );
@@ -391,18 +503,18 @@ if ( ! class_exists( 'SucomUtil' ) ) {
 
 			// get remote readme.txt file
 			if ( $get_remote === true && $expire_secs > 0 )
-				$readme = $this->p->cache->get( $this->p->cf['url']['readme'], 'raw', 'file', $expire_secs );
+				$content = $this->p->cache->get( $readme_url, 'raw', 'file', $expire_secs );
 
 			// fallback to local readme.txt file
-			if ( empty( $readme ) && $fh = @fopen( constant( $this->p->cf['uca'].'_PLUGINDIR' ).'readme.txt', 'rb' ) ) {
+			if ( empty( $content ) && $fh = @fopen( $readme_txt, 'rb' ) ) {
 				$get_remote = false;
-				$readme = fread( $fh, filesize( constant( $this->p->cf['uca'].'_PLUGINDIR' ).'readme.txt' ) );
+				$content = fread( $fh, filesize( $readme_txt ) );
 				fclose( $fh );
 			}
 
-			if ( ! empty( $readme ) ) {
+			if ( ! empty( $content ) ) {
 				$parser = new SuextParseReadme( $this->p->debug );
-				$plugin_info = $parser->parse_readme_contents( $readme );
+				$plugin_info = $parser->parse_readme_contents( $content );
 
 				// remove possibly inaccurate information from local file
 				if ( $get_remote !== true ) {
@@ -420,10 +532,11 @@ if ( ! class_exists( 'SucomUtil' ) ) {
 			return $plugin_info;
 		}
 
-		public function get_admin_url( $submenu = '', $link_text = '' ) {
+		public function get_admin_url( $submenu = '', $link_text = '', $lca = '' ) {
 			$query = '';
 			$hash = '';
 			$url = '';
+			$lca = empty( $lca ) ? $this->p->cf['lca'] : $lca;
 
 			if ( strpos( $submenu, '#' ) !== false )
 				list( $submenu, $hash ) = explode( '#', $submenu );
@@ -432,19 +545,19 @@ if ( ! class_exists( 'SucomUtil' ) ) {
 
 			if ( $submenu == '' ) {
 				$current = $_SERVER['REQUEST_URI'];
-				if ( preg_match( '/^.*\?page='.$this->p->cf['lca'].'-([^&]*).*$/', $current, $match ) )
+				if ( preg_match( '/^.*\?page='.$lca.'-([^&]*).*$/', $current, $match ) )
 					$submenu = $match[1];
-				else $submenu = key( $this->p->cf['lib']['submenu'] );
+				else $submenu = key( $this->p->cf['*']['lib']['submenu'] );
 			}
 
-			if ( array_key_exists( $submenu, $this->p->cf['lib']['setting'] ) ) {
-				$page = 'options-general.php?page='.$this->p->cf['lca'].'-'.$submenu;
+			if ( array_key_exists( $submenu, $this->p->cf['*']['lib']['setting'] ) ) {
+				$page = 'options-general.php?page='.$lca.'-'.$submenu;
 				$url = admin_url( $page );
-			} elseif ( array_key_exists( $submenu, $this->p->cf['lib']['submenu'] ) ) {
-				$page = 'admin.php?page='.$this->p->cf['lca'].'-'.$submenu;
+			} elseif ( array_key_exists( $submenu, $this->p->cf['*']['lib']['submenu'] ) ) {
+				$page = 'admin.php?page='.$lca.'-'.$submenu;
 				$url = admin_url( $page );
-			} elseif ( array_key_exists( $submenu, $this->p->cf['lib']['sitesubmenu'] ) ) {
-				$page = 'admin.php?page='.$this->p->cf['lca'].'-'.$submenu;
+			} elseif ( array_key_exists( $submenu, $this->p->cf['*']['lib']['sitesubmenu'] ) ) {
+				$page = 'admin.php?page='.$lca.'-'.$submenu;
 				$url = network_admin_url( $page );
 			}
 
@@ -555,8 +668,11 @@ if ( ! class_exists( 'SucomUtil' ) ) {
 			}
 			if ( is_array( $atts ) && ! empty( $atts['is_locale'] ) )
 				$title .= ' <span style="font-weight:normal;">('.self::get_locale().')</span>';
-			return '<th'.( empty( $class ) ? '' : ' class="'.$class.'"' ).
-				( empty( $id ) ? '' : ' id="'.$id.'"' ).'><p>'.$title.
+			return '<th'.
+				( empty( $atts['colspan'] ) ? '' : ' colspan="'.$atts['colspan'].'"' ).
+				( empty( $class ) ? '' : ' class="'.$class.'"' ).
+				( empty( $id ) ? '' : ' id="'.$id.'"' ).
+				'><p>'.$title.
 				( empty( $tooltip_text ) ? '' : $tooltip_text ).'</p></th>';
 		}
 
@@ -581,7 +697,8 @@ if ( ! class_exists( 'SucomUtil' ) ) {
 			echo '</ul>';
 			foreach ( $tabs as $key => $title ) {
 				$href_key = $class_tab.$prefix.'_'.$key;
-				echo '<div class="', $class_tab, ( empty( $prefix ) ? '' : ' '.$class_tab.$prefix ), ' ', $href_key, '">';
+				echo '<div class="display_', $this->p->options['plugin_display'], ' ', $class_tab, 
+					( empty( $prefix ) ? '' : ' '.$class_tab.$prefix ), ' ', $href_key, '">';
 				echo '<table class="sucom-setting">';
 				if ( ! empty( $tab_rows[$key] ) && is_array( $tab_rows[$key] ) )
 					foreach ( $tab_rows[$key] as $num => $row ) 
@@ -593,13 +710,20 @@ if ( ! class_exists( 'SucomUtil' ) ) {
 		}
 
 		public function get_tweet_max_len( $long_url, $opt_prefix = 'twitter' ) {
-			$short_url = apply_filters( $this->p->cf['lca'].'_shorten_url', 
-				$long_url, $this->p->options['twitter_shortener'] );
-			$cap_len = $this->p->options[$opt_prefix.'_cap_len'] - strlen( $short_url ) - 1;
-			if ( ! empty( $this->p->options['tc_site'] ) && ! empty( $this->p->options[$opt_prefix.'_via'] ) )
-				$cap_len = $cap_len - strlen( preg_replace( '/^@/', '', 
-					$this->p->options['tc_site'] ) ) - 5;	// 5 for 'via' word and 2 spaces
-			return $cap_len;
+			$service = isset( $this->p->options['twitter_shortener'] ) ? $this->p->options['twitter_shortener'] : '';
+			$short_url = apply_filters( $this->p->cf['lca'].'_shorten_url', $long_url, $service );
+			$len_adj = strpos( $short_url, 'https:' ) === false ? 1 : 2;
+
+			if ( $short_url < $this->p->options['plugin_min_shorten'] )
+				$max_len = $this->p->options[$opt_prefix.'_cap_len'] - strlen( $short_url ) - $len_adj;
+			else $max_len = $this->p->options[$opt_prefix.'_cap_len'] - $this->p->options['plugin_min_shorten'] - $len_adj;
+
+			if ( ! empty( $this->p->options['tc_site'] ) && 
+				! empty( $this->p->options[$opt_prefix.'_via'] ) )
+					$max_len = $max_len - strlen( preg_replace( '/^@/', '', 
+						$this->p->options['tc_site'] ) ) - 5;	// 5 for 'via' word and 2 spaces
+
+			return $max_len;
 		}
 
 		public function get_source_id( $src_name, &$atts = array() ) {

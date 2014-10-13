@@ -38,46 +38,37 @@ if ( ! class_exists( 'WpssoUtil' ) && class_exists( 'SucomUtil' ) ) {
 			}
 		}
 
-		public function push_add_to_options( &$opts = array(), $add_to_prefixes = array( 'plugin' ) ) {
-			foreach ( $add_to_prefixes as $prefix ) {
-				foreach ( $this->get_post_types( $prefix ) as $post_type ) {
-					$option_name = $prefix.'_add_to_'.$post_type->name;
-					if ( ! array_key_exists( $option_name, $opts ) ) {
-						switch ( $post_type->name ) {
-							case 'product':
-								$opts[$option_name] = 1;
-								break;
-							default:
-								$opts[$option_name] = 0;
-								break;
-						}
-					}
+		public function push_add_to_options( &$opts = array(), $add_to_prefixes = array( 'plugin' => 'backend' ) ) {
+			foreach ( $add_to_prefixes as $opt_prefix => $type ) {
+				foreach ( $this->get_post_types( $type ) as $post_type ) {
+					$option_name = $opt_prefix.'_add_to_'.$post_type->name;
+					$filter_name = $this->p->cf['lca'].'_add_to_options_'.$post_type->name;
+					if ( ! isset( $opts[$option_name] ) )
+						$opts[$option_name] = apply_filters( $filter_name, 1 );
 				}
 			}
 			return $opts;
 		}
 
-		public function get_post_types( $opt_prefix, $output = 'objects' ) {
+		public function get_post_types( $type = 'frontend', $output = 'objects' ) {
 			$include = false;
-			$post_types = array();
-			switch ( $opt_prefix ) {
-				case 'buttons':
+			switch ( $type ) {
+				case 'frontend':
 					$include = array( 'public' => true );
 					break;
-				case 'plugin':
+				case 'backend':
 					$include = array( 'public' => true, 'show_ui' => true );
 					break;
 			}
-			$post_types = $include !== false ? 
-				get_post_types( $include, $output ) : array();
-
-			return apply_filters( $this->p->cf['lca'].'_post_types', $post_types, $opt_prefix, $output );
+			$post_types = $include !== false ? get_post_types( $include, $output ) : array();
+			return apply_filters( $this->p->cf['lca'].'_post_types', $post_types, $type, $output );
 		}
 
 		public function flush_post_cache( $post_id ) {
 			switch ( get_post_status( $post_id ) ) {
 			case 'draft':
 			case 'pending':
+			case 'future':
 			case 'private':
 			case 'publish':
 				$lang = SucomUtil::get_locale();
@@ -85,7 +76,7 @@ if ( ! class_exists( 'WpssoUtil' ) && class_exists( 'SucomUtil' ) ) {
 				$sharing_url = $this->p->util->get_sharing_url( $post_id );
 
 				$transients = array(
-					'WpssoHead::get_header_html' => array( 
+					'WpssoHead::get_header_array' => array( 
 						'lang:'.$lang.'_post:'.$post_id.'_url:'.$sharing_url,
 						'lang:'.$lang.'_post:'.$post_id.'_url:'.$sharing_url.'_crawler:pinterest',
 					),
@@ -103,9 +94,16 @@ if ( ! class_exists( 'WpssoUtil' ) && class_exists( 'SucomUtil' ) ) {
 				);
 				$objects = apply_filters( $this->p->cf['lca'].'_post_cache_objects', $objects, $post_id, $lang, $sharing_url );
 
-				$deleted = 0;
-				foreach ( $transients as $group => $arr ) {
-					foreach ( $arr as $val ) {
+				$this->flush_cache_objects( $transients, $objects );
+				break;
+			}
+		}
+
+		public function flush_cache_objects( &$transients = array(), &$objects = array() ) {
+			$deleted = 0;
+			foreach ( $transients as $group => $arr ) {
+				foreach ( $arr as $val ) {
+					if ( ! empty( $val ) ) {
 						$cache_salt = $group.'('.$val.')';
 						$cache_id = $this->p->cf['lca'].'_'.md5( $cache_salt );
 						if ( delete_transient( $cache_id ) ) {
@@ -115,8 +113,10 @@ if ( ! class_exists( 'WpssoUtil' ) && class_exists( 'SucomUtil' ) ) {
 						}
 					}
 				}
-				foreach ( $objects as $group => $arr ) {
-					foreach ( $arr as $val ) {
+			}
+			foreach ( $objects as $group => $arr ) {
+				foreach ( $arr as $val ) {
+					if ( ! empty( $val ) ) {
 						$cache_salt = $group.'('.$val.')';
 						$cache_id = $this->p->cf['lca'].'_'.md5( $cache_salt );
 						if ( wp_cache_delete( $cache_id, $group ) ) {
@@ -126,10 +126,9 @@ if ( ! class_exists( 'WpssoUtil' ) && class_exists( 'SucomUtil' ) ) {
 						}
 					}
 				}
-				if ( $deleted > 0 && $this->p->debug->is_on() )
-					$this->p->notice->inf( $deleted.' items flushed from object and transient cache for post ID #'.$post_id, true );
-				break;
 			}
+			if ( $this->p->debug->is_on() )
+				$this->p->notice->inf( $deleted.' items flushed from object and transient cache', true );
 		}
 
 		public function get_topics() {
@@ -161,16 +160,18 @@ if ( ! class_exists( 'WpssoUtil' ) && class_exists( 'SucomUtil' ) ) {
 		}
 
 		public function add_img_sizes_from_opts( $sizes ) {
-			foreach( $sizes as $pre => $suf ) {
-				if ( ! empty( $this->p->options[$pre.'_width'] ) &&
-					! empty( $this->p->options[$pre.'_height'] ) ) {
-					$this->p->debug->log( 'image size '.$this->p->cf['lca'].'-'.$suf.
-						' ('.$this->p->options[$pre.'_width'].'x'.$this->p->options[$pre.'_height'].
-						( empty( $this->p->options[$pre.'_crop'] ) ? '' : ' cropped' ).') added', 2 );
-					add_image_size( $this->p->cf['lca'].'-'.$suf, 
-						$this->p->options[$pre.'_width'], 
-						$this->p->options[$pre.'_height'], 
-						( empty( $this->p->options[$pre.'_crop'] ) ? false : true ) );
+			foreach( $sizes as $opt_prefix => $size_suffix ) {
+				if ( ! empty( $this->p->options[$opt_prefix.'_width'] ) &&
+					! empty( $this->p->options[$opt_prefix.'_height'] ) ) {
+
+					$this->p->debug->log( 'image size '.$this->p->cf['lca'].'-'.$size_suffix.
+						' ('.$this->p->options[$opt_prefix.'_width'].'x'.$this->p->options[$opt_prefix.'_height'].
+						( empty( $this->p->options[$opt_prefix.'_crop'] ) ? '' : ' cropped' ).') added', 2 );
+
+					add_image_size( $this->p->cf['lca'].'-'.$size_suffix, 
+						$this->p->options[$opt_prefix.'_width'], 
+						$this->p->options[$opt_prefix.'_height'], 
+						( empty( $this->p->options[$opt_prefix.'_crop'] ) ? false : true ) );
 				}
 			}
 		}
@@ -178,46 +179,41 @@ if ( ! class_exists( 'WpssoUtil' ) && class_exists( 'SucomUtil' ) ) {
 		public function sanitize_option_value( $key, $val, $def_val ) {
 			$option_type = apply_filters( $this->p->cf['lca'].'_option_type', false, $key );
 			$reset_msg = __( 'resetting the option to its default value.', WPSSO_TEXTDOM );
-			$charset = get_bloginfo( 'charset' );
 
 			// pre-filter most values to remove html
 			switch ( $option_type ) {
-				case 'code':	// don't remove / encode html tags from css, js, etc.
+				case 'code':		// don't remove / encode html tags from css, js, etc.
 					break;
 				default:
 					$val = stripslashes( $val );
 					$val = wp_filter_nohtml_kses( $val );
-					$val = htmlentities( $val, ENT_QUOTES, $charset, false );	// double_encode = false
+					$val = htmlentities( $val, ENT_QUOTES, get_bloginfo( 'charset' ), false );	// double_encode = false
 					break;
 			}
 
 			switch ( $option_type ) {
-				case 'atname':	// twitter-style usernames (prepend with an at)
+				case 'atname':		// twitter-style usernames (prepend with an at)
 					$val = substr( preg_replace( '/[^a-z0-9_]/', '', strtolower( $val ) ), 0, 15 );
 					if ( ! empty( $val ) ) 
 						$val = '@'.$val;
 					break;
-
-				case 'urlbase':	// strip leading urls off facebook usernames
+				case 'urlbase':		// strip leading urls off facebook usernames
 					$val = preg_replace( '/(http|https):\/\/[^\/]*?\//', '', $val );
 					break;
-
-				case 'url':	// must be a url
-					if ( ! empty( $val ) && strpos( $val, '://' ) === false ) {
+				case 'url':		// must be a url
+					if ( ! empty( $val ) && strpos( $val, '//' ) === false ) {
 						$this->p->notice->inf( 'The value of option \''.$key.'\' must be a URL'.' - '.$reset_msg, true );
 						$val = $def_val;
 					}
 					break;
-
-				case 'numeric':	// must be numeric (blank or zero is ok)
+				case 'numeric':		// must be numeric (blank or zero is ok)
 					if ( ! empty( $val ) && ! is_numeric( $val ) ) {
 						$this->p->notice->inf( 'The value of option \''.$key.'\' must be numeric'.' - '.$reset_msg, true );
 						$val = $def_val;
 					}
 					break;
-
-				case 'posnum':	// integer options that must be 1 or more (not zero)
-				case 'imgdim':	// image dimensions, subject to minimum value (typically, at least 200px)
+				case 'posnum':		// integer options that must be 1 or more (not zero)
+				case 'imgdim':		// image dimensions, subject to minimum value (typically, at least 200px)
 					if ( $option_type == 'imgdim' )
 						$min_int = empty( $this->p->cf['head']['min_img_dim'] ) ? 
 							200 : $this->p->cf['head']['min_img_dim'];
@@ -227,34 +223,28 @@ if ( ! class_exists( 'WpssoUtil' ) && class_exists( 'SucomUtil' ) ) {
 						$val = $def_val;
 					}
 					break;
-
 				case 'textured':	// must be texturized 
 					$val = trim( wptexturize( ' '.$val.' ' ) );
 					break;
-
 				case 'anucase':	// must be alpha-numeric uppercase (hyphens and periods allowed as well)
 					if ( ! empty( $val ) && preg_match( '/[^A-Z0-9\-\.]/', $val ) ) {
 						$this->p->notice->inf( '\''.$val.'\' is not an accepted value for option \''.$key.'\''.' - '.$reset_msg, true );
 						$val = $def_val;
 					}
 					break;
-
-				case 'okblank':	// text strings that can be blank
+				case 'okblank':		// text strings that can be blank
 					if ( ! empty( $val ) )
 						$val = trim( $val );
 					break;
-
-				case 'code':	// options that cannot be blank
+				case 'code':		// options that cannot be blank
 				case 'notblank':
 					if ( empty( $val ) ) {
 						$this->p->notice->inf( 'The value of option \''.$key.'\' cannot be empty'.' - '.$reset_msg, true );
 						$val = $def_val;
 					}
 					break;
-
 				case 'checkbox':	// everything else is a 1/0 checkbox option 
-				default:
-					// make sure the default option is also 1/0, just in case
+				default:		// make sure the default option is also 1/0, just in case
 					if ( $def_val === 0 || $def_val === 1 )
 						$val = empty( $val ) ? 0 : 1;
 					break;

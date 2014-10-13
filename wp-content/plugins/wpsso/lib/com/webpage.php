@@ -22,16 +22,23 @@ if ( ! class_exists( 'SucomWebpage' ) ) {
 		}
 
 		private function set_objects() {
-			if ( ! empty( $this->p->cf['lib']['shortcode'] ) && 
-				! empty( $this->p->options['plugin_shortcodes'] ) ) {
-
-				foreach ( $this->p->cf['lib']['shortcode'] as $id => $name ) {
-					$loaded = apply_filters( $this->p->cf['lca'].'_load_lib', false, "shortcode/$id" );
-					$classname = $this->p->cf['lca'].'shortcode'.$id;
-					if ( class_exists( $classname ) )
-						$this->shortcode[$id] = new $classname( $this->p );
+			if ( ! empty( $this->p->options['plugin_shortcodes'] ) ) {
+				foreach ( $this->p->cf['plugin'] as $lca => $info ) {
+					if ( isset( $info['lib']['shortcode'] ) && is_array( $info['lib']['shortcode'] ) ) {
+						foreach ( $info['lib']['shortcode'] as $id => $name ) {
+							$classname = apply_filters( $lca.'_load_lib', false, 'shortcode/'.$id );
+							if ( $classname !== false && class_exists( $classname ) )
+								$this->shortcode[$id] = new $classname( $this->p );
+						}
+					}
 				}
 			}
+
+			if ( ! empty( $this->p->options['plugin_page_excerpt'] ) )
+				add_post_type_support( 'page', array( 'excerpt' ) );
+
+			if ( ! empty( $this->p->options['plugin_page_tags'] ) )
+				register_taxonomy_for_object_type( 'post_tag', 'page' );
 		}
 
 		// called from Tumblr class
@@ -39,7 +46,9 @@ if ( ! class_exists( 'SucomWebpage' ) ) {
 			global $post;
 			if ( empty( $post ) ) 
 				return '';
+
 			$quote = apply_filters( $this->p->cf['lca'].'_quote_seed', '' );
+
 			if ( $quote != '' )
 				$this->p->debug->log( 'quote seed = "'.$quote.'"' );
 			else {
@@ -47,6 +56,7 @@ if ( ! class_exists( 'SucomWebpage' ) ) {
 					$quote = get_the_excerpt( $post->ID );
 				else $quote = $post->post_content;
 			}
+
 			// remove shortcodes, etc., but don't strip html tags
 			$quote = $this->p->util->cleanup_html_tags( $quote, false );
 
@@ -54,63 +64,113 @@ if ( ! class_exists( 'SucomWebpage' ) ) {
 		}
 
 		// called from Tumblr, Pinterest, and Twitter classes
-		public function get_caption( $type = 'title', $length = 200, $use_post = true, $use_cache = true, $add_hashtags = true ) {
-			$this->p->debug->args( array( 'type' => $type, 'length' => $length, 'use_post' => $use_post, 'use_cache' => $use_cache, 'add_hashtags' => $add_hashtags ) );
-			switch( strtolower( $type ) ) {
-				case 'title' :
-					$caption = $this->get_title( $length, '...', 
-						$use_post, $use_cache, $add_hashtags );
-					break;
-				case 'excerpt' :
-					$caption = $this->get_description( $length, '...', 
-						$use_post, $use_cache, $add_hashtags );
-					break;
-				case 'both' :
-					$title = $this->get_title( null, null, $use_post, $use_cache, false );
-					$caption = $title.' '.$this->p->options['og_title_sep'].' '.
-						$this->get_description( $length - strlen( $title ) - 2, '...', 
-							$use_post, $use_cache, $add_hashtags );
-					break;
-				default :
-					$caption = '';
-					break;
+		public function get_caption( $type = 'title', $length = 200, $use_post = true, $use_cache = true, $add_hashtags = true, $encode = true, $custom = 'og', $source_id = '' ) {
+			$this->p->debug->args( array( 
+				'type' => $type, 
+				'length' => $length, 
+				'use_post' => $use_post, 
+				'use_cache' => $use_cache, 
+				'add_hashtags' => $add_hashtags,
+				'encode' => $encode,
+				'custom' => $custom,
+				'source_id' => $source_id ) );
+			$caption = false;
+			$separator = $encode === true ? 
+				$this->p->options['og_title_sep'] : 	// option value is stored encoded
+				html_entity_decode( $this->p->options['og_title_sep'], ENT_QUOTES, get_bloginfo( 'charset' ) );
+
+			if ( ! empty( $custom ) && $custom !== 'og' &&
+				( is_singular() || $use_post !== false ) ) {
+				if ( ( $obj = $this->p->util->get_post_object( $use_post ) ) === false ) {
+					$this->p->debug->log( 'exiting early: invalid object type' );
+					return $caption;
+				}
+				$post_id = empty( $obj->ID ) || empty( $obj->post_type ) ? 0 : $obj->ID;
+				if ( ! empty( $post_id ) && 
+					isset( $this->p->addons['util']['postmeta'] ) ) {
+					$caption = $this->p->addons['util']['postmeta']->get_options( $post_id, $custom );
+					if ( ! empty( $caption ) ) 
+						$this->p->debug->log( 'custom postmeta '.$custom.' = "'.$caption.'"' );
+				}
 			}
-			// title and description htmlentities already encoded
-			return apply_filters( $this->p->cf['lca'].'_caption', $caption, $type, $length, 
-				$use_post, $use_cache, $add_hashtags );
+
+			if ( empty( $caption ) ) {
+				$cap_e = false;
+				$cap_c = preg_replace( '/_(title|desc)$/', '', $custom );
+
+				// request all values un-encoded, then encode once we have the complete caption text
+				switch ( strtolower( $type ) ) {
+					case 'title':
+						$caption = $this->get_title( $length, '...', $use_post, $use_cache, $add_hashtags, $cap_e, $cap_c.'_title', $source_id );
+						break;
+					case 'excerpt':
+						$caption = $this->get_description( $length, '...', $use_post, $use_cache, $add_hashtags, $cap_e, $cap_c.'_desc', $source_id );
+						break;
+					case 'both':
+						$prefix = $this->get_title( 0, '', $use_post, $use_cache, false, $cap_e, $cap_c.'_title', $source_id ).' '.$separator.' ';
+						$caption = $prefix.$this->get_description( $length - strlen( $prefix ), '...', $use_post, $use_cache, $add_hashtags, $cap_e, $cap_c.'_desc', $source_id );
+						break;
+				}
+			}
+
+			if ( $encode === true )
+				$caption = htmlentities( $caption, ENT_QUOTES, get_bloginfo( 'charset' ), false );	// double_encode = false
+
+			return apply_filters( $this->p->cf['lca'].'_caption', $caption, $use_post, $add_hashtags, $custom, $source_id );
 		}
 
-		public function get_title( $textlen = 70, $trailing = '', $use_post = false, $use_cache = true, $add_hashtags = false ) {
-			$this->p->debug->args( array( 'textlen' => $textlen, 'trailing' => $trailing, 'use_post' => $use_post, 'use_cache' => $use_cache, 'add_hashtags' => $add_hashtags ) );
+		public function get_title( $textlen = 70, $trailing = '', $use_post = false, $use_cache = true, $add_hashtags = false, $encode = true, $custom = 'og_title', $source_id = '' ) {
+			$this->p->debug->args( array( 
+				'textlen' => $textlen, 
+				'trailing' => $trailing, 
+				'use_post' => $use_post, 
+				'use_cache' => $use_cache, 
+				'add_hashtags' => $add_hashtags,
+				'encode' => $encode,
+				'custom' => $custom,
+				'source_id' => $source_id ) );
 			$title = false;
 			$parent_title = '';
 			$paged_suffix = '';
 			$hashtags = '';
 			$post_id = 0;
+			$separator = $encode === true ? 
+				$this->p->options['og_title_sep'] : 	// option value is stored encoded
+				html_entity_decode( $this->p->options['og_title_sep'], ENT_QUOTES, get_bloginfo( 'charset' ) );
 
 			if ( is_singular() || $use_post !== false ) {
-				if ( ( $obj = $this->p->util->get_the_object( $use_post ) ) === false ) {
+				if ( ( $obj = $this->p->util->get_post_object( $use_post ) ) === false ) {
 					$this->p->debug->log( 'exiting early: invalid object type' );
 					return $title;
 				}
-				$post_id = empty( $obj->ID ) ? 0 : $obj->ID;
-				if ( ! empty( $post_id ) && isset( $this->p->addons['util']['postmeta'] ) ) {
-					$title = $this->p->addons['util']['postmeta']->get_options( $post_id, 'og_title' );
-					if ( ! empty( $title ) )
-						$this->p->debug->log( 'custom meta title = "'.$title.'"' );
+				$post_id = empty( $obj->ID ) || empty( $obj->post_type ) ? 0 : $obj->ID;
+				if ( ! empty( $post_id ) && ! empty( $custom ) && 
+					isset( $this->p->addons['util']['postmeta'] ) ) {
+					$title = $this->p->addons['util']['postmeta']->get_options( $post_id, $custom );
+					if ( ! empty( $title ) ) 
+						$this->p->debug->log( 'custom postmeta '.$custom.' = "'.$title.'"' );
+				}
+			} elseif ( is_author() || ( is_admin() && ( $screen = get_current_screen() ) && ( $screen->id === 'user-edit' || $screen->id === 'profile' ) ) ) {
+				$author = $this->p->util->get_author_object();
+				if ( ! empty( $author->ID ) ) {
+					if ( ! empty( $custom ) && isset( $this->p->addons['util']['user'] ) ) {
+						$title = $this->p->addons['util']['user']->get_options( $author->ID, $custom );
+						if ( ! empty( $title ) ) 
+							$this->p->debug->log( 'custom user '.$custom.' = "'.$title.'"' );
+					} elseif ( is_admin() )	// re-create default wp title on admin side
+						$title = $author->display_name.' '.$separator.' '.$title;
 				}
 			}
 
 			// get seed if no custom meta title
 			if ( empty( $title ) ) {
-				$title = apply_filters( $this->p->cf['lca'].'_title_seed', '', $use_post, $use_cache, $add_hashtags );
+				$title = apply_filters( $this->p->cf['lca'].'_title_seed', '', $use_post, $add_hashtags, $custom, $source_id );
 				if ( ! empty( $title ) )
 					$this->p->debug->log( 'title seed = "'.$title.'"' );
 			}
 
 			// check for hashtags in meta or seed title, remove and then add again after shorten
 			if ( preg_match( '/(.*)(( #[a-z0-9\-]+)+)$/U', $title, $match ) ) {
-				$add_hashtags = true;
 				$title = $match[1];
 				$hashtags = trim( $match[2] );
 			} elseif ( is_singular() || $use_post !== false ) {
@@ -123,7 +183,7 @@ if ( ! class_exists( 'SucomWebpage' ) ) {
 				// $obj and $post_id are defined above, with the same test, so we should be good
 				if ( is_singular() || $use_post !== false ) {
 					if ( is_singular() ) {
-						$title = wp_title( $this->p->options['og_title_sep'], false, 'right' );
+						$title = wp_title( $separator, false, 'right' );
 						$this->p->debug->log( 'is_singular: wp_title() = "'.$title.'"' );
 					} elseif ( ! empty( $post_id ) ) {
 						$title = get_the_title( $post_id );
@@ -138,7 +198,7 @@ if ( ! class_exists( 'SucomWebpage' ) ) {
 				} elseif ( $this->p->is_avail['seo']['*'] == true ) {
 
 					// use separator on right for compatibility with aioseo
-					$title = wp_title( $this->p->options['og_title_sep'], false, 'right' );
+					$title = wp_title( $separator, false, 'right' );
 					$this->p->debug->log( 'have seo: wp_title() = "'.$title.'"' );
 	
 				// category title, with category parents
@@ -146,14 +206,14 @@ if ( ! class_exists( 'SucomWebpage' ) ) {
 
 					$term = get_queried_object();
 					$title = $term->name;
-					$cat_parents = get_category_parents( $term->term_id, false, ' '.$this->p->options['og_title_sep'].' ', false );
+					$cat_parents = get_category_parents( $term->term_id, false, ' '.$separator.' ', false );
 					if ( is_wp_error( $cat_parents ) )
 						$this->p->debug->log( 'get_category_parents() returned WP_Error object' );
 					else {
 						$this->p->debug->log( 'get_category_parents() = "'.$cat_parents.'"' );
 						if ( ! empty( $cat_parents ) ) {
 							$title = $cat_parents;
-							$title = preg_replace( '/\.\.\. \\'.$this->p->options['og_title_sep'].' /', '... ', $title );
+							$title = preg_replace( '/\.\.\. \\'.$separator.' /', '... ', $title );
 						}
 					}
 	
@@ -164,7 +224,7 @@ if ( ! class_exists( 'SucomWebpage' ) ) {
 					 *	category = the name of the category 
 					 *	author page = the public name of the user 
 					 */
-					$title = wp_title( $this->p->options['og_title_sep'], false, 'right' );
+					$title = wp_title( $separator, false, 'right' );
 					$this->p->debug->log( 'default: wp_title() = "'.$title.'"' );
 				}
 	
@@ -175,63 +235,95 @@ if ( ! class_exists( 'SucomWebpage' ) ) {
 				}
 			}
 
-			// trim excess separator
-			$title = preg_replace( '/ \\'.$this->p->options['og_title_sep'].' *$/', '', $title );
+			$title = $this->p->util->cleanup_html_tags( $title );		// strip html tags before removing separator
+			$title = preg_replace( '/ \\'.$separator.' *$/', '', $title );	// trim excess separator
 
+			// apply title filter before adjusting it's length
+			$title = apply_filters( $this->p->cf['lca'].'_title_pre_limit', $title );
+
+			// check title against string length limits
 			if ( $textlen > 0 ) {
 				// seo-like title modifications
 				if ( $this->p->is_avail['seo']['*'] === false ) {
 					$paged = get_query_var( 'paged' );
 					if ( $paged > 1 ) {
-						if ( ! empty( $this->p->options['og_title_sep'] ) )
-							$paged_suffix .= $this->p->options['og_title_sep'].' ';
+						if ( ! empty( $separator ) )
+							$paged_suffix .= $separator.' ';
 						$paged_suffix .= sprintf( 'Page %s', $paged );
 						$textlen = $textlen - strlen( $paged_suffix ) - 1;
 					}
 				}
-				if ( ! empty( $parent_title ) ) $textlen = $textlen - strlen( $parent_title ) - 3;
-				if ( ! empty( $hashtags ) ) $textlen = $textlen - strlen( $hashtags ) - 1;
-				$title = $this->p->util->limit_text_length( $title, $textlen, $trailing );
-			} $title = $this->p->util->cleanup_html_tags( $title );
+				if ( ! empty( $parent_title ) ) 
+					$textlen = $textlen - strlen( $parent_title ) - 3;
+				if ( $add_hashtags === true && ! empty( $hashtags ) ) 
+					$textlen = $textlen - strlen( $hashtags ) - 1;
+				$title = $this->p->util->limit_text_length( $title, $textlen, $trailing, false );	// don't run cleanup_html_tags()
+				$title = preg_replace( '/ \\'.$separator.' *('.$trailing.')?$/', $trailing, $title );	// just in case
+			}
 
-			if ( ! empty( $parent_title ) ) $title .= ' ('.$parent_title.')';
-			if ( ! empty( $paged_suffix ) ) $title .= ' '.$paged_suffix;
-			if ( ! empty( $hashtags ) ) $title .= ' '.$hashtags;
+			if ( ! empty( $parent_title ) ) 
+				$title .= ' ('.$parent_title.')';
 
-			$charset = get_bloginfo( 'charset' );
-			$title = htmlentities( $title, ENT_QUOTES, $charset, false );	// double_encode = false
-			return apply_filters( $this->p->cf['lca'].'_title', $title );
+			if ( ! empty( $paged_suffix ) ) 
+				$title .= ' '.$paged_suffix;
+
+			if ( $add_hashtags === true && ! empty( $hashtags ) ) 
+				$title .= ' '.$hashtags;
+
+			if ( $encode === true )
+				$title = htmlentities( $title, ENT_QUOTES, get_bloginfo( 'charset' ), false );	// double_encode = false
+
+			return apply_filters( $this->p->cf['lca'].'_title', $title, $use_post, $add_hashtags, $custom, $source_id );
 		}
 
-		public function get_description( $textlen = 156, $trailing = '', $use_post = false, $use_cache = true, $add_hashtags = true ) {
-			$this->p->debug->args( array( 'textlen' => $textlen, 'trailing' => $trailing, 'use_post' => $use_post, 'use_cache' => $use_cache, 'add_hashtags' => $add_hashtags ) );
+		public function get_description( $textlen = 156, $trailing = '...', $use_post = false, $use_cache = true, $add_hashtags = true, $encode = true, $custom = 'og_desc', $source_id = '' ) {
+			$this->p->debug->args( array( 
+				'textlen' => $textlen, 
+				'trailing' => $trailing, 
+				'use_post' => $use_post, 
+				'use_cache' => $use_cache, 
+				'add_hashtags' => $add_hashtags, 
+				'encode' => $encode,
+				'custom' => $custom,
+				'source_id' => $source_id ) );
 			$desc = false;
 			$hashtags = '';
 			$post_id = 0;
+			$screen = '';
+			$page = ''; 
 
 			if ( is_singular() || $use_post !== false ) {
-				if ( ( $obj = $this->p->util->get_the_object( $use_post ) ) === false ) {
+				if ( ( $obj = $this->p->util->get_post_object( $use_post ) ) === false ) {
 					$this->p->debug->log( 'exiting early: invalid object type' );
 					return $desc;
 				}
-				$post_id = empty( $obj->ID ) ? 0 : $obj->ID;
-				if ( ! empty( $post_id ) && isset( $this->p->addons['util']['postmeta'] ) ) {
-					$desc = $this->p->addons['util']['postmeta']->get_options( $post_id, 'og_desc' );
-					if ( ! empty( $desc ) )
-						$this->p->debug->log( 'custom meta description = "'.$desc.'"' );
+				$post_id = empty( $obj->ID ) || empty( $obj->post_type ) ? 0 : $obj->ID;
+				if ( ! empty( $post_id ) && ! empty( $custom ) && 
+					isset( $this->p->addons['util']['postmeta'] ) ) {
+					$desc = $this->p->addons['util']['postmeta']->get_options( $post_id, $custom );
+					if ( ! empty( $desc ) ) 
+						$this->p->debug->log( 'custom postmeta '.$custom.' = "'.$desc.'"' );
+				}
+			} elseif ( is_author() || ( is_admin() && ( $screen = get_current_screen() ) && ( $screen->id === 'user-edit' || $screen->id === 'profile' ) ) ) {
+				$author = $this->p->util->get_author_object();
+				if ( ! empty( $author->ID ) ) {
+					if ( isset( $this->p->addons['util']['user'] ) )
+						$desc = $this->p->addons['util']['user']->get_options( $author->ID, $custom );
+					if ( ! empty( $desc ) ) 
+						$this->p->debug->log( 'custom user '.$custom.' = "'.$desc.'"' );
+					elseif ( is_admin() )	// re-create default description on admin side
+						$desc = empty( $author->description ) ? sprintf( 'Authored by %s', $author->display_name ) : $author->description;
 				}
 			}
 
 			// get seed if no custom meta description
 			if ( empty( $desc ) ) {
-				$desc = apply_filters( $this->p->cf['lca'].'_description_seed', '', $use_post, $use_cache, $add_hashtags );
-				if ( ! empty( $desc ) )
-					$this->p->debug->log( 'description seed = "'.$desc.'"' );
+				$desc = apply_filters( $this->p->cf['lca'].'_description_seed', '', $use_post, $add_hashtags, $custom, $source_id );
+				if ( ! empty( $desc ) ) $this->p->debug->log( 'description seed = "'.$desc.'"' );
 			}
 		
 			// check for hashtags in meta or seed description, remove and then add again after shorten
 			if ( preg_match( '/(.*)(( #[a-z0-9\-]+)+)$/U', $desc, $match ) ) {
-				$add_hashtags = true;
 				$desc = $match[1];
 				$hashtags = trim( $match[2] );
 			} elseif ( is_singular() || $use_post !== false ) {
@@ -272,22 +364,24 @@ if ( ! class_exists( 'SucomWebpage' ) ) {
 						$desc = preg_replace( '/^.*?<p>/i', '', $desc );	// question mark makes regex un-greedy
 		
 				} elseif ( is_author() ) { 
-					$this->p->debug->log( 'is_author() = true' );
-					$author = get_query_var( 'author_name' ) ?  get_userdata( get_query_var( 'author' ) ) : get_user_by( 'slug', get_query_var( 'author_name' ) );
+					$author = $this->p->util->get_author_object();
 					$desc = empty( $author->description ) ? sprintf( 'Authored by %s', $author->display_name ) : $author->description;
 			
 				} elseif ( is_tag() ) {
-					$this->p->debug->log( 'is_tag() = true' );
 					$desc = tag_description();
 					if ( empty( $desc ) )
 						$desc = sprintf( 'Tagged with %s', single_tag_title( '', false ) );
 			
 				} elseif ( is_category() ) { 
-					$this->p->debug->log( 'is_category() = true' );
 					$desc = category_description();
 					if ( empty( $desc ) )
 						$desc = sprintf( '%s Category', single_cat_title( '', false ) ); 
 				
+				} elseif ( is_tax() ) { 
+					$term = get_queried_object();
+					if ( ! empty( $term->description ) )
+						$desc = $term->description;
+
 				} elseif ( is_day() ) 
 					$desc = sprintf( 'Daily Archives for %s', get_the_date() );
 				elseif ( is_month() ) 
@@ -298,7 +392,7 @@ if ( ! class_exists( 'SucomWebpage' ) ) {
 
 			// if there's still no description, then fallback to a generic version
 			if ( empty( $desc ) ) {
-				if ( is_admin() && $obj->post_status == 'auto-draft' )
+				if ( is_admin() && ! empty( $obj->post_status ) && $obj->post_status == 'auto-draft' )
 					$this->p->debug->log( 'post_status is auto-draft - using empty description' );
 				else {
 					// pass options array to allow fallback if locale option does not exist
@@ -313,30 +407,35 @@ if ( ! class_exists( 'SucomWebpage' ) ) {
 				}
 			}
 
-			if ( $textlen > 0 ) {
-				if ( ! empty( $hashtags ) ) 
-					$textlen = $textlen - strlen( $hashtags ) -1;
-				$desc = $this->p->util->limit_text_length( $desc, $textlen, '...' );	// runs cleanup_html_tags()
-			} else $desc = $this->p->util->cleanup_html_tags( $desc );
+			$desc = $this->p->util->cleanup_html_tags( $desc, true, $this->p->options['og_desc_alt'] );
+			$desc = apply_filters( $this->p->cf['lca'].'_description_pre_limit', $desc );
 
-			if ( ! empty( $hashtags ) ) 
+			if ( $textlen > 0 ) {
+				if ( $add_hashtags === true && ! empty( $hashtags ) ) 
+					$textlen = $textlen - strlen( $hashtags ) -1;
+				$desc = $this->p->util->limit_text_length( $desc, $textlen, $trailing, false );	// don't run cleanup_html_tags()
+			}
+
+			if ( $add_hashtags === true && ! empty( $hashtags ) ) 
 				$desc .= ' '.$hashtags;
 
-			$charset = get_bloginfo( 'charset' );
-			$desc = htmlentities( $desc, ENT_QUOTES, $charset, false );	// double_encode = false
-			$this->p->debug->log( 'pre-filter description = "'.$desc.'"' );
-			return apply_filters( $this->p->cf['lca'].'_description', $desc );
+			if ( $encode === true )
+				$desc = htmlentities( $desc, ENT_QUOTES, get_bloginfo( 'charset' ), false );	// double_encode = false
+
+			return apply_filters( $this->p->cf['lca'].'_description', $desc, $use_post, $add_hashtags, $custom, $source_id );
 		}
 
 		public function get_content( $use_post = true, $use_cache = true ) {
-			$this->p->debug->args( array( 'use_post' => $use_post, 'use_cache' => $use_cache ) );
+			$this->p->debug->args( array( 
+				'use_post' => $use_post, 
+				'use_cache' => $use_cache ) );
 			$content = false;
 
-			if ( ( $obj = $this->p->util->get_the_object( $use_post ) ) === false ) {
+			if ( ( $obj = $this->p->util->get_post_object( $use_post ) ) === false ) {
 				$this->p->debug->log( 'exiting early: invalid object type' );
 				return $content;
 			}
-			$post_id = empty( $obj->ID ) ? 0 : $obj->ID;
+			$post_id = empty( $obj->ID ) || empty( $obj->post_type ) ? 0 : $obj->ID;
 			$this->p->debug->log( 'using content from object id '.$post_id );
 			$filter_content = $this->p->options['plugin_filter_content'];
 			$filter_name = $filter_content  ? 'filtered' : 'unfiltered';
@@ -362,7 +461,7 @@ if ( ! class_exists( 'SucomWebpage' ) ) {
 				}
 			}
 
-			$content = apply_filters( $this->p->cf['lca'].'_content_seed', '' );
+			$content = apply_filters( $this->p->cf['lca'].'_content_seed', '', $use_post );
 			if ( ! empty( $content ) )
 				$this->p->debug->log( 'content seed = "'.$content.'"' );
 			elseif ( ! empty( $obj->post_content ) )
@@ -389,9 +488,9 @@ if ( ! class_exists( 'SucomWebpage' ) ) {
 				else $filter_removed = false;
 
 				// remove all of our shortcodes
-				if ( ! empty( $this->p->cf['lib']['shortcode'] ) && 
-					is_array( $this->p->cf['lib']['shortcode'] ) )
-						foreach ( $this->p->cf['lib']['shortcode'] as $id => $name )
+				if ( isset( $this->p->cf['*']['lib']['shortcode'] ) && 
+					is_array( $this->p->cf['*']['lib']['shortcode'] ) )
+						foreach ( $this->p->cf['*']['lib']['shortcode'] as $id => $name )
 							if ( array_key_exists( $id, $this->shortcode ) && 
 								is_object( $this->shortcode[$id] ) )
 									$this->shortcode[$id]->remove();
@@ -411,9 +510,9 @@ if ( ! class_exists( 'SucomWebpage' ) ) {
 					$this->p->sharing->add_buttons_filter( 'the_content' );
 
 				// add our shortcodes back
-				if ( ! empty( $this->p->cf['lib']['shortcode'] ) && 
-					is_array( $this->p->cf['lib']['shortcode'] ) )
-						foreach ( $this->p->cf['lib']['shortcode'] as $id => $name )
+				if ( isset( $this->p->cf['*']['lib']['shortcode'] ) && 
+					is_array( $this->p->cf['*']['lib']['shortcode'] ) )
+						foreach ( $this->p->cf['*']['lib']['shortcode'] as $id => $name )
 							if ( array_key_exists( $id, $this->shortcode ) && 
 								is_object( $this->shortcode[$id] ) )
 									$this->shortcode[$id]->add();
@@ -429,7 +528,7 @@ if ( ! class_exists( 'SucomWebpage' ) ) {
 			$this->p->debug->log( 'content strlen() before = '.$content_strlen_before.', after = '.$content_strlen_after );
 
 			// apply filters before caching
-			$content = apply_filters( $this->p->cf['lca'].'_content', $content );
+			$content = apply_filters( $this->p->cf['lca'].'_content', $content, $use_post );
 
 			if ( $filter_content == true && ! empty( $cache_id ) ) {
 				// only some caching plugins implement this function
@@ -444,8 +543,9 @@ if ( ! class_exists( 'SucomWebpage' ) ) {
 
 		public function get_section( $post_id ) {
 			$section = '';
-			if ( ( is_singular() || ! empty( $post_id ) ) && isset( $this->p->addons['util']['postmeta'] ) )
-				$section = $this->p->addons['util']['postmeta']->get_options( $post_id, 'og_art_section' );
+			if ( ( is_singular() || ! empty( $post_id ) ) && 
+				isset( $this->p->addons['util']['postmeta'] ) )
+					$section = $this->p->addons['util']['postmeta']->get_options( $post_id, 'og_art_section' );
 
 			if ( ! empty( $section ) ) 
 				$this->p->debug->log( 'found custom meta section = '.$section );
@@ -467,7 +567,7 @@ if ( ! class_exists( 'SucomWebpage' ) ) {
 			else {
 				$tags = array_slice( $this->get_tags( $post_id ), 0, $this->p->options['og_desc_hashtags'] );
 				if ( ! empty( $tags ) ) {
-					$hashtags = '#'.trim( implode( ' #', preg_replace( '/ /', '', $tags ) ) );
+					$hashtags = '#'.trim( implode( ' #', preg_replace( '/[ \[\]#%!\$\?\\\\\/\.\*\+\^\-]/', '', $tags ) ) );
 					$this->p->debug->log( 'hashtags = "'.$hashtags.'"' );
 				}
 			}

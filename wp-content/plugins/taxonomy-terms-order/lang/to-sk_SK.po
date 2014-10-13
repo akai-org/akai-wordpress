@@ -8,14 +8,15 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"PO-Revision-Date: 2013-01-22 14:55+0300\n"
-"Last-Translator: Serg\n"
+"PO-Revision-Date: 2014-04-28 15:18+0100\n"
+"Last-Translator: \n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
-"X-Generator: Poedit 1.5.4\n"
+"X-Generator: Poedit 1.6.4\n"
+"Language: sk_SK\n"
 
 #: include/interface.php:19
 msgid "Taxonomy Order"
-msgstr "Taxonómia objednávky"
+msgstr "Poradie taxonómie"
 
 #: include/interface.php:52 include/options.php:57
 msgid ""
@@ -71,7 +72,7 @@ msgstr "Aktualizácia"
 
 #: include/interface.php:199
 msgid "Items Order Updates"
-msgstr "Položky objednávky aktualizácie"
+msgstr "Aktualizácia poradia položiek"
 
 #: include/options.php:16
 msgid "Settings Saved"
@@ -131,7 +132,7 @@ msgstr "Admin zoradenie"
 
 #: include/options.php:97
 msgid "This will change the order of terms within the admin interface"
-msgstr "To zmení poradie výrazy v rámci administrátorského rozhrania"
+msgstr "To zmení poradie výrazov v rámci administrátorského rozhrania"
 
 #: include/options.php:105
 msgid "Autosort OFF"
@@ -173,16 +174,12 @@ msgstr ""
 msgid "Save Settings"
 msgstr "Uložiť nastavenia"
 
-#. #-#-#-#-#  plugin.pot (Category Order and Taxonomy Terms Order 1.2.7)  #-#-#-#-#
 #. Plugin Name of the plugin/theme
-#. #-#-#-#-#  plugin.pot (Category Order and Taxonomy Terms Order 1.2.7)  #-#-#-#-#
 #. Description of the plugin/theme
 msgid "Category Order and Taxonomy Terms Order"
 msgstr "Poradí kategórií a taxonómie podmienky objednávky"
 
-#. #-#-#-#-#  plugin.pot (Category Order and Taxonomy Terms Order 1.2.7)  #-#-#-#-#
 #. Plugin URI of the plugin/theme
-#. #-#-#-#-#  plugin.pot (Category Order and Taxonomy Terms Order 1.2.7)  #-#-#-#-#
 #. Author URI of the plugin/theme
 msgid "http://www.nsp-code.com"
 msgstr "http://www.NSP-code.com"

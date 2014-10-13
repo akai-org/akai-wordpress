@@ -3,11 +3,13 @@
 Plugin Name: Advanced Custom Fields: Date and Time Picker
 Plugin URI: https://github.com/soderlind/acf-field-date-time-picker
 Description: Date and Time Picker field for Advanced Custom Fields
-Version: 2.0.13
+Version: 2.0.18.1
 Author: Per Soderlind
 Author URI: http://soderlind.no
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
+Text Domain: acf-field-date-time-picker
+Domain Path: /languages
 */
 
 
@@ -23,11 +25,10 @@ class acf_field_date_time_picker_plugin
 
 	function __construct()
 	{
-		// set text domain
-		$domain = 'acf-date_time_picker';
-		$mofile = trailingslashit(dirname(__File__)) . 'lang/' . $domain . '-' . get_locale() . '.mo';
-		load_textdomain( $domain, $mofile );
+		load_plugin_textdomain( 'acf-field-date-time-picker', false, dirname( plugin_basename( __FILE__ ) ) . '/languages/' );
 
+		// version 5+
+		add_action('acf/include_field_types', array($this, 'include_field_types'));	
 
 		// version 4+
 		add_action('acf/register_fields', array($this, 'register_fields'));
@@ -65,6 +66,12 @@ class acf_field_date_time_picker_plugin
 	function register_fields()
 	{
 		include_once('date_time_picker-v4.php');
+	}
+
+
+	function include_field_types()
+	{
+		include_once('date_time_picker-v5.php');
 	}
 
 }

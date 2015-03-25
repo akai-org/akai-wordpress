@@ -1,5 +1,5 @@
 <?php
- 
+
 // Useful global constants
 define('AKAI_VERSION', '1.1.0');
 define('SCRIPT_DEBUG', true);
@@ -13,7 +13,7 @@ remove_action('wp_enqueue_scripts', 'srz_fb_enqueue_script');
 
 
 include 'includes/template_tags.php';
- 
+
 
  /**
   * Set up theme defaults and register supported WordPress features.
@@ -31,7 +31,7 @@ include 'includes/template_tags.php';
 	 * to change 'akai' to the name of your theme in all template files.
 	 */
 	load_theme_textdomain( 'akai', get_template_directory() . '/languages' );
-  
+
   /**
    * Enable support for Post Thumbnails
    */
@@ -47,7 +47,7 @@ include 'includes/template_tags.php';
 
  }
  add_action( 'after_setup_theme', 'akai_setup' );
- 
+
 
  /**
   * Enqueue scripts and styles for front-end.
@@ -58,18 +58,18 @@ include 'includes/template_tags.php';
 	$postfix = ( defined( 'SCRIPT_DEBUG' ) && true === SCRIPT_DEBUG ) ? '' : '.min';
 
 	wp_enqueue_script( 'akai', get_template_directory_uri() . "/assets/js/main{$postfix}.js", ['jquery'], AKAI_VERSION, true );
-		
+
 	// wp_enqueue_style( 'akai', get_template_directory_uri() . "/assets/css/main{$postfix}.css", [], AKAI_VERSION );
  }
  add_action( 'wp_enqueue_scripts', 'akai_scripts_styles' );
- 
+
 
 // Register AKAI additional post types.
 function akai_post_types() {
  register_taxonomy('person_category', 'person', Array(
    'labels' => Array(
-     'name' => 'Kategorie osób',
-     'singular_name' => 'Kategoria osób'
+     'name' => 'Kontakt - Kategorie osób',
+     'singular_name' => 'Kontakt - Kategoria osób'
    ),
    'public' => false,
    'show_ui' => true,
@@ -78,15 +78,15 @@ function akai_post_types() {
 
   register_post_type('person', Array(
     'labels' => Array(
-      'name' => 'Osoby',
-      'singular_name' => 'Osoba'
+      'name' => 'Kontakt - Osoby',
+      'singular_name' => 'Kontakt - Osoba'
     ),
     'public' => false,
     'show_ui' => true,
     'supports' => Array('title', 'thumbnail', 'page-attributes'),
     'taxonomies' => Array('person_category')
   ));
-  
+
   register_post_type('partner', Array(
     'labels' => Array(
       'name' => 'Partnerzy',
@@ -184,7 +184,7 @@ function stars_func($attributes) {
 
     $content = "";
 
-    for ($i = 0; $i < floor($options['value']); $i++) { 
+    for ($i = 0; $i < floor($options['value']); $i++) {
       $content .= '<i class="fa fa-star"></i>';
     }
 
@@ -193,7 +193,7 @@ function stars_func($attributes) {
       $content .= '<i class="fa fa-star-half-o"></i>';
     }
 
-    for ($i = ceil($options['value']); $i < $options['limit']; $i++) { 
+    for ($i = ceil($options['value']); $i < $options['limit']; $i++) {
       $content .= '<i class="fa fa-star-o"></i>';
     }
 

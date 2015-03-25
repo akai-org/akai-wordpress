@@ -6,9 +6,9 @@ node_modules
 *.log
 .sass-cache
 
-# Ignore config
+# Ignore local config, database passwords etc - you should create those files yourself (or copy them from server's/someone's directory)
 local-config.php
-
+Movefile
 
 # Operating system files
 .Spotlight-V100
@@ -36,6 +36,5 @@ wp-content/themes/index.php
 wp-content/uploads/
 wp-content/upgrade/
 wp-content/wp-cache-config.php
-Movefile
 wp-content/*.sql
 .htaccess

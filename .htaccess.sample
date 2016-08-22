@@ -1,3 +1,10 @@
+# Block DDoS wordpress attacks
+# (https://www.digitalocean.com/community/tutorials/how-to-protect-wordpress-from-xml-rpc-attacks-on-ubuntu-14-04)
+<files xmlrpc.php>
+  order allow,deny
+  deny from all
+</files>
+
 <IfModule mod_rewrite.c>
 RewriteEngine On
 RewriteBase /akai-new/

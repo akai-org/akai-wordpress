@@ -1,47 +1,40 @@
 GIT
-  remote: git://github.com/welaika/wordmove.git
-  revision: 5b8d187615bdc913f322801de22ebd9e7a21ae55
+  remote: https://github.com/welaika/wordmove.git
+  revision: 2097b2f640b31c46f406721905a3c712bb60111d
   specs:
-    wordmove (1.1.0)
-      activesupport
-      colored
-      escape
-      i18n
-      photocopier (~> 0.0.10)
-      rake
-      thor
+    wordmove (2.0.0)
+      activesupport (~> 4.2, >= 4.2.1)
+      colorize (~> 0.7.5)
+      photocopier (~> 1.1, >= 1.1.0)
+      thor (~> 0.19.1)
 
 GEM
   remote: https://rubygems.org/
   specs:
-    activesupport (4.1.0)
-      i18n (~> 0.6, >= 0.6.9)
+    activesupport (4.2.7.1)
+      i18n (~> 0.7)
       json (~> 1.7, >= 1.7.7)
       minitest (~> 5.1)
-      thread_safe (~> 0.1)
+      thread_safe (~> 0.3, >= 0.3.4)
       tzinfo (~> 1.1)
-    colored (1.2)
-    escape (0.0.4)
-    i18n (0.6.9)
-    json (1.8.1)
-    minitest (5.3.2)
-    net-scp (1.2.0)
+    colorize (0.7.7)
+    i18n (0.7.0)
+    json (1.8.3)
+    minitest (5.10.1)
+    net-scp (1.2.1)
       net-ssh (>= 2.6.5)
-    net-ssh (2.8.0)
+    net-ssh (3.2.0)
     net-ssh-gateway (1.2.0)
       net-ssh (>= 2.6.5)
-    photocopier (0.0.10)
-      activesupport
-      escape
-      i18n
-      net-scp
-      net-ssh
-      net-ssh-gateway
-    rake (10.2.2)
+    photocopier (1.1.1)
+      activesupport (~> 4.2.0)
+      net-scp (~> 1.2.1)
+      net-ssh (~> 3.0)
+      net-ssh-gateway (~> 1.2.0)
     sass (3.3.7)
-    thor (0.19.1)
-    thread_safe (0.3.3)
-    tzinfo (1.1.0)
+    thor (0.19.4)
+    thread_safe (0.3.5)
+    tzinfo (1.2.2)
       thread_safe (~> 0.1)
 
 PLATFORMS
@@ -50,3 +43,6 @@ PLATFORMS
 DEPENDENCIES
   sass (~> 3.3.0)
   wordmove!
+
+BUNDLED WITH
+   1.13.6

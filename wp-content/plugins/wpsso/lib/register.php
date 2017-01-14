@@ -1,9 +1,9 @@
 <?php
 /*
-License: GPLv3
-License URI: http://www.gnu.org/licenses/gpl.txt
-Copyright 2012-2014 - Jean-Sebastien Morisset - http://surniaulula.com/
-*/
+ * License: GPLv3
+ * License URI: https://www.gnu.org/licenses/gpl.txt
+ * Copyright 2012-2017 Jean-Sebastien Morisset (https://surniaulula.com/)
+ */
 
 if ( ! defined( 'ABSPATH' ) ) 
 	die( 'These aren\'t the droids you\'re looking for...' );
@@ -16,12 +16,14 @@ if ( ! class_exists( 'WpssoRegister' ) ) {
 
 		public function __construct( &$plugin ) {
 			$this->p =& $plugin;
+
 			register_activation_hook( WPSSO_FILEPATH, array( &$this, 'network_activate' ) );
 			register_deactivation_hook( WPSSO_FILEPATH, array( &$this, 'network_deactivate' ) );
-			register_uninstall_hook( WPSSO_FILEPATH, array( __CLASS__, 'network_uninstall' ) );
 
-			add_action( 'wpmu_new_blog', array( &$this, 'wpmu_new_blog' ), 10, 6 );
-			add_action( 'wpmu_activate_blog', array( &$this, 'wpmu_activate_blog' ), 10, 5 );
+			if ( is_multisite() ) {
+				add_action( 'wpmu_new_blog', array( &$this, 'wpmu_new_blog' ), 10, 6 );
+				add_action( 'wpmu_activate_blog', array( &$this, 'wpmu_activate_blog' ), 10, 5 );
+			}
 		}
 
 		// fires immediately after a new site is created
@@ -47,11 +49,18 @@ if ( ! class_exists( 'WpssoRegister' ) ) {
 			self::do_multisite( $sitewide, array( &$this, 'deactivate_plugin' ) );
 		}
 
+		// called from uninstall.php for network or single site
 		public static function network_uninstall() {
 			$sitewide = true;
-			$lca = WpssoConfig::get_config( 'lca' );
-			delete_site_option( $lca.'_site_options' );
+
+			// uninstall from the individual blogs first
 			self::do_multisite( $sitewide, array( __CLASS__, 'uninstall_plugin' ) );
+
+			$var_const = WpssoConfig::get_variable_constants();
+			$opts = get_site_option( $var_const['WPSSO_SITE_OPTIONS_NAME'], array() );
+
+			if ( empty( $opts['plugin_preserve'] ) )
+				delete_site_option( $var_const['WPSSO_SITE_OPTIONS_NAME'] );
 		}
 
 		private static function do_multisite( $sitewide, $method, $args = array() ) {
@@ -68,56 +77,113 @@ if ( ! class_exists( 'WpssoRegister' ) ) {
 		}
 
 		private function activate_plugin() {
-			global $wp_version;
-			$lca = $this->p->cf['lca'];
-			$short = $this->p->cf['plugin'][$lca]['short'];
-			if ( version_compare( $wp_version, $this->p->cf['wp']['min_version'], '<' ) ) {
-				require_once( ABSPATH.'wp-admin/includes/plugin.php' );
-				deactivate_plugins( WPSSO_PLUGINBASE );
-				error_log( WPSSO_PLUGINBASE.' requires WordPress '.$this->p->cf['wp']['min_version'].' or higher ('.$wp_version.' reported).' );
-				wp_die( '<p>'. sprintf( __( 'Sorry, the %1$s plugin cannot be activated &mdash; it requires WordPress version %2$s or newer.', WPSSO_TEXTDOM ), 
-					$short, $this->p->cf['wp']['min_version'] ).'</p>' );
+			$lca = WpssoConfig::$cf['lca'];
+			$uca = strtoupper( $lca );
+			$short = WpssoConfig::$cf['plugin'][$lca]['short'];
+			$version = WpssoConfig::$cf['plugin'][$lca]['version'];
+
+			foreach ( array( 'wp', 'php' ) as $key ) {
+				switch ( $key ) {
+					case 'wp':
+						global $wp_version;
+						$app_label = 'WordPress';
+						$cur_version = $wp_version;
+						break;
+					case 'php':
+						$app_label = 'PHP';
+						$cur_version = phpversion();
+						break;
+				}
+				if ( isset( WpssoConfig::$cf[$key]['min_version'] ) ) {
+					$min_version = WpssoConfig::$cf[$key]['min_version'];
+					if ( version_compare( $cur_version, $min_version, '<' ) ) {
+						require_once( ABSPATH.'wp-admin/includes/plugin.php' );
+						deactivate_plugins( WPSSO_PLUGINBASE );
+						error_log( WPSSO_PLUGINBASE.' requires '.$app_label.' '.$min_version.' or higher ('.$cur_version.' reported).' );
+						wp_die( '<p>The '.$short.' plugin cannot be activated &mdash; '.
+							$short.' requires '.$app_label.' version '.$min_version.' or newer.</p>' );
+					}
+				}
 			}
-			set_transient( $lca.'_activation_redirect', true, 60 * 60 );
+
 			$this->p->set_config();
-			$this->p->set_objects( true );
+			$this->p->set_objects( true );	// $activate = true
+			$this->p->util->clear_all_cache( true );	// $clear_external = true
+
+			WpssoUtil::save_all_times( $lca, $version );
+			set_transient( $lca.'_activation_redirect', true, 60 * 60 );
+
+			if ( ! is_array( $this->p->options ) || empty( $this->p->options ) ||
+				( defined( $uca.'_RESET_ON_ACTIVATE' ) && constant( $uca.'_RESET_ON_ACTIVATE' ) ) ) {
+
+				$this->p->options = $this->p->opt->get_defaults();
+				delete_option( constant( $uca.'_OPTIONS_NAME' ) );
+				add_option( constant( $uca.'_OPTIONS_NAME' ), $this->p->options, null, 'yes' );	// autoload = yes
+
+				if ( $this->p->debug->enabled )
+					$this->p->debug->log( 'default options have been added to the database' );
+
+				if ( defined( $uca.'_RESET_ON_ACTIVATE' ) && constant( $uca.'_RESET_ON_ACTIVATE' ) )
+					$this->p->notice->warn( $uca.'_RESET_ON_ACTIVATE constant is true &ndash; 
+						plugin options have been reset to their default values.' );
+			}
 		}
 
 		private function deactivate_plugin() {
-			$slug = $this->p->cf['plugin'][$this->p->cf['lca']]['slug'];
-			wp_clear_scheduled_hook( 'plugin_updates-'.$slug );
+
+			// clear all cached objects and transients
+			$this->p->util->delete_expired_db_transients( true );
+			$this->p->util->delete_all_cache_files();
+
+			// trunc all stored notices for all users
+			$this->p->notice->trunc_all();
 		}
 
 		private static function uninstall_plugin() {
-			global $wpdb;
-			$cf = WpssoConfig::get_config();
-			$slug = $cf['plugin'][$cf['lca']]['slug'];
-			$options = get_option( $cf['lca'].'_options' );
 
-			if ( empty( $options['plugin_preserve'] ) ) {
-				delete_option( $cf['lca'].'_options' );
-				delete_post_meta_by_key( '_'.$cf['lca'].'_meta' );
-				WpssoUser::delete_metabox_prefs();
-			}
+			$var_const = WpssoConfig::get_variable_constants();
+			$opts = get_option( $var_const['WPSSO_OPTIONS_NAME'], array() );
 
-			// delete update related options
-			delete_option( 'external_updates-'.$slug );
-			delete_option( $cf['lca'].'_umsg' );
-			delete_option( $cf['lca'].'_utime' );
+			delete_option( $var_const['WPSSO_TS_NAME'] );
+			delete_option( $var_const['WPSSO_NOTICE_NAME'] );
 
-			// delete stored admin notices
-			foreach ( array( 'nag', 'err', 'inf' ) as $type ) {
-				$msg_opt = $cf['lca'].'_notices_'.$type;
-				delete_option( $msg_opt );
-				foreach ( get_users( array( 'meta_key' => $msg_opt ) ) as $user )
-					delete_user_option( $user->ID, $msg_opt );
+			if ( empty( $opts['plugin_preserve'] ) ) {
+
+				delete_option( $var_const['WPSSO_OPTIONS_NAME'] );
+
+				delete_post_meta_by_key( $var_const['WPSSO_META_NAME'] );
+				delete_post_meta_by_key( '_wpsso_orderby_schema_id' );
+
+				foreach ( get_users() as $user ) {
+
+					// site specific user options
+					delete_user_option( $user->ID, $var_const['WPSSO_NOTICE_NAME'] );
+					delete_user_option( $user->ID, $var_const['WPSSO_DISMISS_NAME'] );
+
+					// global / network user options
+					delete_user_meta( $user->ID, $var_const['WPSSO_META_NAME'] );
+					delete_user_meta( $user->ID, $var_const['WPSSO_PREF_NAME'] );
+					delete_user_meta( $user->ID, '_wpsso_orderby_schema_id' );
+
+					WpssoUser::delete_metabox_prefs( $user->ID );
+				}
+				foreach ( WpssoTerm::get_public_terms() as $term_id ) {
+					WpssoTerm::delete_term_meta( $term_id, $var_const['WPSSO_META_NAME'] );
+
+					if ( WpssoTerm::has_meta_table() ) {
+						WpssoTerm::delete_term_meta( $term_id, '_wpsso_orderby_schema_id' );
+					}
+				}
 			}
 
 			// delete transients
-			$dbquery = 'SELECT option_name FROM '.$wpdb->options.' WHERE option_name LIKE \'_transient_timeout_'.$cf['lca'].'_%\';';
+			global $wpdb;
+			$dbquery = 'SELECT option_name FROM '.$wpdb->options.
+				' WHERE option_name LIKE \'_transient_timeout_wpsso_%\';';
 			$expired = $wpdb->get_col( $dbquery ); 
+
 			foreach( $expired as $transient ) { 
-				$key = str_replace('_transient_timeout_', '', $transient);
+				$key = str_replace( '_transient_timeout_', '', $transient );
 				if ( ! empty( $key ) )
 					delete_transient( $key );
 			}

@@ -10,3 +10,9 @@
  * License:     GPLv2+
  * License URI: http://www.gnu.org/licenses/gpl-2.0.html
  */
+
+@media screen and (max-width: 960px) {
+       .site-header.big .logo {
+        margin-top: 0px !important; 
+	} 
+}

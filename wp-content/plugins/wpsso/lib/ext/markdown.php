@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) )
 	die( 'These aren\'t the droids you\'re looking for...' );
 
 if ( ! function_exists( 'suext_markdown' ) ) {
-	function suext_markdown( $text, &$debug = '' ) {
+	function suext_markdown( $text, &$debug = false ) {
 		static $parser;
 		if ( ! isset( $parser ) )
 			$parser = new SuextMarkdownParserExtra( $debug );
@@ -62,13 +62,10 @@ class SuextMarkdownParser {
 	var $predef_urls = array();
 	var $predef_titles = array();
 
-	protected $debug;
+	function __construct( &$debug = false ) {
 
-	function __construct( &$debug = '' ) {
-
-		// check for logging object with mark() method
-		$this->debug = method_exists( $debug, 'mark' ) ? $debug : $this;
-		$this->debug->mark();
+		if ( ! empty( $this->debug->enabled ) )
+			$this->debug->mark();
 
 		$this->_initDetab();
 		$this->prepareItalicsAndBold();
@@ -88,8 +85,6 @@ class SuextMarkdownParser {
 		asort($this->block_gamut);
 		asort($this->span_gamut);
 	}
-
-	protected function mark() { return; }
 
 	# Internal hashes used during transformation.
 	var $urls = array();
@@ -1484,11 +1479,10 @@ class SuextMarkdownParserExtra extends SuextMarkdownParser {
 	# Predefined abbreviations.
 	var $predef_abbr = array();
 
-	function __construct( &$debug = '' ) {
+	function __construct( &$debug = false ) {
 
-		// check for logging object with mark() method
-		$this->debug = method_exists( $debug, 'mark' ) ? $debug : $this;
-		$this->debug->mark();
+		if ( ! empty( $this->debug->enabled ) )
+			$this->debug->mark();
 
 		# Add extra escapable characters before parent constructor 
 		# initialize the table.
@@ -2055,7 +2049,7 @@ class SuextMarkdownParserExtra extends SuextMarkdownParser {
 
 		return $text;
 	}
-	function _doHeaders_attr($attr) {
+	function _doHeaders_attr(&$attr) {
 		if (empty($attr))  return "";
 		return " id=\"$attr\"";
 	}
@@ -2063,13 +2057,13 @@ class SuextMarkdownParserExtra extends SuextMarkdownParser {
 		if ($matches[3] == '-' && preg_match('{^- }', $matches[1]))
 			return $matches[0];
 		$level = $matches[3]{0} == '=' ? 1 : 2;
-		$attr  = $this->_doHeaders_attr($id =& $matches[2]);
+		$attr  = $this->_doHeaders_attr($matches[2]);
 		$block = "<h$level$attr>".$this->runSpanGamut($matches[1])."</h$level>";
 		return "\n" . $this->hashBlock($block) . "\n\n";
 	}
 	function _doHeaders_callback_atx($matches) {
 		$level = strlen($matches[1]);
-		$attr  = $this->_doHeaders_attr($id =& $matches[3]);
+		$attr  = $this->_doHeaders_attr($matches[3]);
 		$block = "<h$level$attr>".$this->runSpanGamut($matches[2])."</h$level>";
 		return "\n" . $this->hashBlock($block) . "\n\n";
 	}

@@ -39,3 +39,6 @@ wp-content/wp-cache-config.php
 wp-content/*.sql
 .htaccess
 /slides
+
+wordfence-waf.php
+wp-cli.phar

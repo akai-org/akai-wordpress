@@ -1,9 +1,9 @@
 <?php
 /*
-License: GPLv3
-License URI: http://www.gnu.org/licenses/gpl.txt
-Copyright 2012-2014 - Jean-Sebastien Morisset - http://surniaulula.com/
-*/
+ * License: GPLv3
+ * License URI: https://www.gnu.org/licenses/gpl.txt
+ * Copyright 2012-2017 Jean-Sebastien Morisset (https://surniaulula.com/)
+ */
 
 if ( ! defined( 'ABSPATH' ) ) 
 	die( 'These aren\'t the droids you\'re looking for...' );
@@ -13,329 +13,659 @@ if ( ! class_exists( 'WpssoHead' ) ) {
 	class WpssoHead {
 
 		private $p;
+		private static $dnc_const = array(
+			'DONOTCACHEPAGE' => true,	// wp super cache and w3tc
+			'COMET_CACHE_ALLOWED' => false,	// comet cache
+		);
 
 		public function __construct( &$plugin ) {
 			$this->p =& $plugin;
-			$this->p->debug->mark();
-			$this->p->util->add_plugin_filters( $this, array( 
-				'head_cache_salt' => 2,		// modify the cache salt for certain crawlers
-			) );
-			add_filter( 'language_attributes', array( &$this, 'add_doctype' ) );
-			add_action( 'wp_head', array( &$this, 'add_header' ), WPSSO_HEAD_PRIORITY );
+			if ( $this->p->debug->enabled )
+				$this->p->debug->mark();
+
+			add_action( 'wp_head', array( &$this, 'add_head' ), WPSSO_HEAD_PRIORITY );
+			add_action( 'amp_post_template_head', array( &$this, 'add_head' ), WPSSO_HEAD_PRIORITY );
+
+			if ( ! empty( $this->p->options['add_link_rel_shortlink'] ) )
+				remove_action( 'wp_head', 'wp_shortlink_wp_head' );
+
+			// disable page caching for customized meta tags (same URL, different meta tags)
+			if ( strpos( $this->get_head_cache_index(), 'crawler:none' ) === false ) {
+				if ( $this->p->debug->enabled )
+					$this->p->debug->log( 'setting do-not-cache constants' );
+				WpssoConfig::set_variable_constants( self::$dnc_const );	// set "do not cache" constants
+			}
 		}
 
-		public function add_doctype( $doctype ) {
-			$obj = $this->p->util->get_post_object( false );
-			$post_id = empty( $obj->ID ) || empty( $obj->post_type ) ? 0 : $obj->ID;
-			$post_type = '';
-			$item_type = 'Blog';	// default value for non-singular webpages
-			if ( is_singular() ) {
-				if ( ! empty( $obj->post_type ) )
-					$post_type = $obj->post_type;
-				switch ( $post_type ) {
-					case 'article':
-					case 'book':
-					case 'blog':
-					case 'event':
-					case 'organization':
-					case 'person':
-					case 'product':
-					case 'review':
-					case 'other':
-						$item_type = ucfirst( $post_type );
-						break;
-					case 'local.business':
-						$item_type = 'LocalBusiness';
-						break;
-					default:
-						$item_type = 'Article';
-						break;
-				}
-			} elseif ( ( ! is_search() && ! empty( $this->p->options['og_def_author_on_index'] ) && ! empty( $this->p->options['og_def_author_id'] ) ) || 
-				( is_search() && ! empty( $this->p->options['og_def_author_on_search'] ) && ! empty( $this->p->options['og_def_author_id'] ) ) )
-					$item_type = 'Article';
+		// $mixed = 'default' | 'current' | post ID | $mod array
+		public function get_head_cache_index( $mixed = 'current', $sharing_url = false ) {
+			if ( $this->p->debug->enabled )
+				$this->p->debug->mark();
 
-			$item_type = apply_filters( $this->p->cf['lca'].'_item_type', $item_type );
+			$lca = $this->p->cf['lca'];
+			$crawler_name = SucomUtil::crawler_name();
+			$head_index = 'locale:'.SucomUtil::get_locale( $mixed );
 
-			if ( strpos( $doctype, ' itemscope itemtype="http://schema.org/' ) === false )
-				$doctype .= ' itemscope itemtype="http://schema.org/'.$item_type.'"';
+			if ( $sharing_url !== false )
+				$head_index .= '_url:'.$sharing_url;
 
-			return $doctype;
-		}
+			if ( $this->p->is_avail['amp_endpoint'] && is_amp_endpoint() )
+				$head_index .= '_amp:true';
 
-		public function filter_head_cache_salt( $salt, $use_post = false ) {
-			switch ( SucomUtil::crawler_name() ) {
-				case 'pinterest':
-					$salt .= '_crawler:'.SucomUtil::crawler_name();
+			switch ( $crawler_name ) {
+				case 'pinterest':	// pinterest gets different image sizes and does not read json markup
+					$head_index .= '_crawler:'.$crawler_name;
+					break;
+				default:
+					$head_index .= '_crawler:none';
 					break;
 			}
-			return $salt;
+
+			return ltrim( $head_index, '_' );
 		}
 
-		// called by WP wp_head action
-		public function add_header() {
-			// add various function test results top-most in the debug log
-			// hook into wpsso_is_functions to extend the default array of function names
-			if ( $this->p->debug->is_on() ) {
-				$is_functions = array( 
-					'is_author',
-					'is_archive',
-					'is_category',
-					'is_tag',
-					'is_tax',
-					'is_home',
-					'is_search',
-					'is_singular',
-					'is_attachment',
-					'is_product',
-					'is_product_category',
-					'is_product_tag',
-				);
-				$is_functions = apply_filters( $this->p->cf['lca'].'_is_functions', $is_functions );
-				foreach ( $is_functions as $function ) 
-					if ( function_exists( $function ) && $function() )
-						$this->p->debug->log( $function.'() = true' );
+		// called by wp_head action
+		public function add_head() {
+			if ( $this->p->debug->enabled )
+				$this->p->debug->mark();
+
+			$lca = $this->p->cf['lca'];
+			$use_post = apply_filters( $lca.'_head_use_post', false );	// used by woocommerce with is_shop()
+			$mod = $this->p->util->get_page_mod( $use_post );		// get post/user/term id, module name, and module object reference
+			$read_cache = true;
+			$mt_og = array();
+
+			if ( $this->p->debug->enabled ) {
+				$this->p->debug->log( 'home url = '.get_option( 'home' ) );
+				$this->p->debug->log( 'locale default = '.SucomUtil::get_locale( 'default' ) );
+				$this->p->debug->log( 'locale current = '.SucomUtil::get_locale( 'current' ) );
+				$this->p->debug->log( 'locale mod = '.SucomUtil::get_locale( $mod ) );
+				$this->p->util->log_is_functions();
 			}
 
-			if ( $this->p->is_avail['metatags'] ) {
-				echo $this->get_header_html();
-			} else echo "\n<!-- ".$this->p->cf['lca']." meta tags are disabled -->\n";
+			$add_head_html = apply_filters( $lca.'_add_head_html', $this->p->is_avail['head'], $mod );
+			if ( $this->p->debug->enabled ) {
+				$this->p->debug->log( 'is_avail head = '.( $this->p->is_avail['head'] ? 'true' : 'false' ) );
+				$this->p->debug->log( 'add_head_html = '.( $add_head_html ? 'true' : 'false' ) );
+			}
+
+			if ( $add_head_html )
+				echo $this->get_head_html( $use_post, $mod, $read_cache, $mt_og );
+			else echo "\n<!-- ".$lca." head html is disabled -->\n";
 
 			// include additional information when debug mode is on
-			if ( $this->p->debug->is_on() ) {
+			if ( $this->p->debug->enabled ) {
+				$this->p->debug->log( 'end of get_head_html' );
+
+				// show debug log
+				$this->p->debug->show_html( null, 'debug log' );
+
+				// show constants
 				$defined_constants = get_defined_constants( true );
 				$defined_constants['user']['WPSSO_NONCE'] = '********';
-				$this->p->debug->show_html( SucomUtil::preg_grep_keys( '/^WPSSO_/', $defined_constants['user'] ), 'wpsso constants' );
+				if ( is_multisite() )
+					$this->p->debug->show_html( SucomUtil::preg_grep_keys( '/^(MULTISITE|^SUBDOMAIN_INSTALL|.*_SITE)$/', 
+						$defined_constants['user'] ), 'multisite constants' );
+				$this->p->debug->show_html( SucomUtil::preg_grep_keys( '/^WPSSO_/',
+					$defined_constants['user'] ), 'wpsso constants' );
 
+				// show active plugins
+				$this->p->debug->show_html( print_r( WpssoUtil::active_plugins(), true ), 'active plugins' );
+
+				// show available modules
+				$this->p->debug->show_html( print_r( $this->p->is_avail, true ), 'available features' );
+
+				// show all plugin options
 				$opts = $this->p->options;
 				foreach ( $opts as $key => $val ) {
-					switch ( true ) {
-						case ( strpos( $key, '_css_' ) !== false ):
-						case ( strpos( $key, '_js_' ) !== false ):
-						case ( preg_match( '/_(key|tid)$/', $key ) ):
-							$opts[$key] = '********';
+					switch ( $key ) {
+						case ( strpos( $key, '_js_' ) !== false ? true : false ):
+						case ( strpos( $key, '_css_' ) !== false ? true : false ):
+						case ( preg_match( '/_(html|key|secret|tid|token)$/', $key ) ? true : false ):
+							$opts[$key] = '[removed]';
+							break;
 					}
 				}
-				$this->p->debug->show_html( print_r( $this->p->is_avail, true ), 'available features' );
-				$this->p->debug->show_html( print_r( $this->p->check->get_active(), true ), 'active plugins' );
-				$this->p->debug->show_html( null, 'debug log' );
 				$this->p->debug->show_html( $opts, 'wpsso settings' );
 
-				// on singular webpages, show the custom social settings
-				if ( is_singular() && ( $obj = $this->p->util->get_post_object() ) !== false ) {
-					$post_id = empty( $obj->ID ) || empty( $obj->post_type ) ? 0 : $obj->ID;
-					if ( ! empty( $post_id ) && isset( $this->p->addons['util']['postmeta'] ) ) {
-						$post_opts = $this->p->addons['util']['postmeta']->get_options( $post_id );
-						$this->p->debug->show_html( $post_opts, 'wpsso post_id '.$post_id.' social settings' );
+			}	// end of debug information
+		}
+
+		// extract certain key fields for reference and sanity checks
+		public function extract_head_info( &$head_mt, &$head_info = array() ) {
+
+			foreach ( $head_mt as $mt ) {
+				if ( ! isset( $mt[2] ) || 
+					! isset( $mt[3] ) )
+						continue;
+
+				$mt_match = $mt[2].'-'.$mt[3];
+
+				switch ( $mt_match ) {
+					case 'property-og:type':
+					case 'property-og:title':
+					case 'property-og:description':
+					case 'property-article:author:name':
+					case ( strpos( $mt_match, 'name-schema:' ) === 0 ? true : false ):
+						if ( ! isset( $head_info[$mt[3]] ) )	// only save the first meta tag value
+							$head_info[$mt[3]] = $mt[5];
+						break;
+					case ( preg_match( '/^property-((og|pinterest):(image|video))(:secure_url|:url)?$/', $mt_match, $m ) ? true : false ):
+						if ( ! empty( $mt[5] ) )
+							$has_media[$m[1]] = true;	// optimize media loop
+						break;
+				}
+			}
+
+			// save first image and video information
+			// assumes array key order defined by SucomUtil::get_mt_prop_image() 
+			// and SucomUtil::get_mt_prop_video()
+			foreach ( array( 'og:image', 'og:video', 'pinterest:image' ) as $prefix ) {
+				if ( empty( $has_media[$prefix] ) )
+					continue;
+
+				$is_first = false;
+
+				foreach ( $head_mt as $mt ) {
+					if ( ! isset( $mt[2] ) || 
+						! isset( $mt[3] ) )
+							continue;
+
+					if ( strpos( $mt[3], $prefix ) !== 0 ) {
+						$is_first = false;
+
+						// if we already found media, then skip to the next media prefix
+						if ( ! empty( $head_info[$prefix] ) )
+							continue 2;
+						else continue;	// skip meta tags without matching prefix
+					}
+
+					$mt_match = $mt[2].'-'.$mt[3];
+
+					switch ( $mt_match ) {
+						case ( preg_match( '/^property-'.$prefix.'(:secure_url|:url)?$/', $mt_match, $m ) ? true : false ):
+							if ( ! empty( $head_info[$prefix] ) )	// only save the media URL once
+								continue 2;			// get the next meta tag
+							if ( ! empty( $mt[5] ) ) {
+								$head_info[$prefix] = $mt[5];	// save the media URL
+								$is_first = true;
+							}
+							break;
+						case ( preg_match( '/^property-'.$prefix.':(width|height|cropped|id|title|description)$/', $mt_match, $m ) ? true : false ):
+							if ( $is_first !== true )		// only save for first media found
+								continue 2;			// get the next meta tag
+							$head_info[$mt[3]] = $mt[5];
+							break;
 					}
 				}
 			}
+
+			return $head_info;
 		}
 
-		public function get_header_html( $use_post = false, $read_cache = true, &$meta_og = array() ) {
-			$html = "\n<!-- ".$this->p->cf['lca']." meta tags begin -->\n";
-			foreach ( $this->get_header_array( $use_post, $read_cache, $meta_og ) as $val )
-				if ( isset( $val[0] ) )
-					$html .= $val[0];
-			$html .= "<!-- ".$this->p->cf['lca']." meta tags end -->\n";
+		public function get_head_html( $use_post = false, &$mod = false, $read_cache = true, array &$mt_og ) {
+			if ( $this->p->debug->enabled )
+				$this->p->debug->mark();
+
+			$lca = $this->p->cf['lca'];
+			if ( ! is_array( $mod ) )
+				$mod = $this->p->util->get_page_mod( $use_post );	// get post/user/term id, module name, and module object reference
+			$crawler_name = SucomUtil::crawler_name();
+			$comment_begin = $lca.' meta tags begin';
+			$comment_end = $lca.' meta tags end';
+
+			// extra begin/end meta tag for duplicate meta tags check
+			$html = "\n\n".'<!-- '.$comment_begin.' -->'."\n".
+				'<!-- added on '.date( 'c' ).( $crawler_name !== 'none' ? 
+					' ('.$crawler_name.') ' : ' ' ).'-->'."\n";
+
+			if ( ! empty( $this->p->options['plugin_check_head'] ) )
+				$html .= '<meta name="'.$lca.':mark" content="'.$comment_begin.'"/>'."\n";
+
+			// first element of returned array is the html tag
+			$indent = 0;
+			foreach ( $this->get_head_array( $use_post, $mod, $read_cache, $mt_og ) as $mt ) {
+				if ( ! empty( $mt[0] ) ) {
+					if ( $indent && strpos( $mt[0], '</noscript' ) === 0 )
+						$indent = 0;
+					$html .= str_repeat( "\t", 
+						(int) $indent ).$mt[0];
+					if ( strpos( $mt[0], '<noscript' ) === 0 )
+						$indent = 1;
+				}
+			}
+
+			// extra begin / end meta tag for duplicate meta tags check
+			if ( ! empty( $this->p->options['plugin_check_head'] ) )
+				$html .= '<meta name="'.$lca.':mark" content="'.$comment_end.'"/>'."\n";
+
+			$html .= '<!-- '.$comment_end.' -->'."\n\n";
+
 			return $html;
 		}
 
-		public function get_header_array( $use_post = false, $read_cache = true, &$meta_og = array() ) {
-			$this->p->debug->mark();
-			$lca = $this->p->cf['lca'];
-			$short_aop = $this->p->cf['plugin'][$lca]['short'].
-				( $this->p->is_avail['aop'] ? ' Pro' : '' );
-			$obj = $this->p->util->get_post_object( $use_post );
-			$post_id = empty( $obj->ID ) || empty( $obj->post_type ) || 
-				( ! is_singular() && $use_post === false ) ? 0 : $obj->ID;
-			$sharing_url = $this->p->util->get_sharing_url( $use_post );
-			$author_id = false;
+		public function get_head_array( $use_post = false, &$mod = false, $read_cache = true, &$mt_og = array() ) {
 
-			$header_array = array();
-			if ( $this->p->is_avail['cache']['transient'] ) {
-				$cache_salt = __METHOD__.'('.apply_filters( $lca.'_head_cache_salt', 
-					'lang:'.SucomUtil::get_locale().'_post:'.$post_id.'_url:'.$sharing_url, $use_post ).')';
-				$cache_id = $lca.'_'.md5( $cache_salt );
-				$cache_type = 'object cache';
-				$this->p->debug->log( $cache_type.': transient salt '.$cache_salt );
-				if ( apply_filters( $lca.'_header_read_cache', $read_cache ) ) {
-					$header_array = get_transient( $cache_id );
-					if ( $header_array !== false ) {
-						$this->p->debug->log( $cache_type.': header array retrieved from transient '.$cache_id );
-						return $header_array;
+			if ( $this->p->debug->enabled )
+				$this->p->debug->mark( 'build head array' );	// begin timer
+
+			$lca = $this->p->cf['lca'];
+			if ( ! is_array( $mod ) )
+				$mod = $this->p->util->get_page_mod( $use_post );	// get post/user/term id, module name, and module object reference
+			$sharing_url = $this->p->util->get_sharing_url( $mod );
+			$crawler_name = SucomUtil::crawler_name();
+			$head_array = array();
+			$head_index = $this->get_head_cache_index( $mod, $sharing_url );
+			$cache_salt = __METHOD__.'('.SucomUtil::get_mod_salt( $mod, $sharing_url ).')';
+			$cache_id = $lca.'_'.md5( $cache_salt );
+			$cache_exp = (int) apply_filters( $lca.'_cache_expire_head_array', 
+				$this->p->options['plugin_head_cache_exp'] );
+
+			if ( $this->p->debug->enabled ) {
+				$this->p->debug->log( 'sharing url = '.$sharing_url );
+				$this->p->debug->log( 'crawler name = '.$crawler_name );
+				$this->p->debug->log( 'head index = '.$head_index );
+				$this->p->debug->log( 'transient expire = '.$cache_exp );
+				$this->p->debug->log( 'transient salt = '.$cache_salt );
+			}
+
+			if ( $cache_exp > 0 ) {
+				$head_array = get_transient( $cache_id );
+				if ( isset( $head_array[$head_index] ) ) {
+					if ( $this->p->debug->enabled ) {
+						$this->p->debug->log( 'head index found in array from transient '.$cache_id );
+						$this->p->debug->mark( 'build head array' );	// end timer
+					}
+					return $head_array[$head_index];	// stop here
+				} elseif ( $this->p->debug->enabled )
+					$this->p->debug->log( 'head index not in array from transient '.$cache_id );
+			} elseif ( $this->p->debug->enabled )
+				$this->p->debug->log( 'head array transient is disabled' );
+
+			// set the reference url for admin notices
+			if ( is_admin() )
+				$this->p->notice->set_reference_url( $sharing_url );
+
+			// define the author_id (if one is available)
+			if ( $mod['is_post'] ) {
+				if ( $mod['post_author'] )
+					$author_id = $mod['post_author'];
+				else $author_id = false;
+			} elseif ( $mod['is_user'] ) {
+				$author_id = $mod['id'];
+			} else $author_id = false;
+
+			if ( $this->p->debug->enabled )
+				$this->p->debug->log( 'author id = '.
+					( $author_id === false ? 'false' : (int) $author_id ) );
+
+			/*
+			 * Open Graph
+			 */
+			$mt_og = $this->p->og->get_array( $mod, $mt_og, $crawler_name );
+
+			/*
+			 * Weibo
+			 */
+			$mt_weibo = $this->p->weibo->get_array( $mod, $mt_og, $crawler_name );
+
+			/*
+			 * Twitter Cards
+			 */
+			$mt_tc = $this->p->tc->get_array( $mod, $mt_og, $crawler_name );
+
+			/*
+			 * Name / SEO meta tags
+			 */
+			$mt_name = array();
+			if ( ! empty( $this->p->options['add_meta_name_author'] ) ) {
+				// fallback for authors without a Facebook page URL in their user profile
+				if ( empty( $mt_og['article:author'] ) &&
+					is_object( $this->p->m['util']['user'] ) )	// just in case
+						$mt_name['author'] = $this->p->m['util']['user']->get_author_meta( $author_id,
+							$this->p->options['fb_author_name'] );
+			}
+
+			if ( ! empty( $this->p->options['add_meta_name_canonical'] ) )
+				$mt_name['canonical'] = $this->p->util->get_canonical_url( $mod );
+
+			if ( ! empty( $this->p->options['add_meta_name_description'] ) )
+				$mt_name['description'] = $this->p->webpage->get_description( $this->p->options['seo_desc_len'], 
+					'...', $mod, true, false, true, 'seo_desc' );	// add_hashtags = false
+
+			if ( ! empty( $this->p->options['add_meta_name_p:domain_verify'] ) ) {
+				if ( ! empty( $this->p->options['rp_dom_verify'] ) )
+					$mt_name['p:domain_verify'] = $this->p->options['rp_dom_verify'];
+			}
+
+			$mt_name = apply_filters( $lca.'_meta_name', $mt_name, $use_post, $mod );
+
+			/*
+			 * Link relation tags
+			 */
+			$link_rel = array();
+
+			if ( ! empty( $this->p->options['add_link_rel_author'] ) ) {
+				if ( ! empty( $author_id ) && is_object( $this->p->m['util']['user'] ) )	// just in case
+					$link_rel['author'] = $this->p->m['util']['user']->get_author_website( $author_id, 
+						$this->p->options['seo_author_field'] );
+			}
+
+			if ( ! empty( $this->p->options['add_link_rel_publisher'] ) ) {
+				if ( ! empty( $this->p->options['seo_publisher_url'] ) )
+					$link_rel['publisher'] = $this->p->options['seo_publisher_url'];
+			}
+
+			if ( ! empty( $this->p->options['add_link_rel_shortlink'] ) ) {
+				if ( $mod['is_post'] )
+					$link_rel['shortlink'] = wp_get_shortlink( $mod['id'], 'post' );
+				else $link_rel['shortlink'] = apply_filters( $lca.'_shorten_url',
+					$mt_og['og:url'], $this->p->options['plugin_shortener'] );
+			}
+
+			$link_rel = apply_filters( $lca.'_link_rel', $link_rel, $use_post, $mod );
+
+			/*
+			 * Schema meta tags
+			 */
+			$mt_schema = $this->p->schema->get_meta_array( $mod, $mt_og, $crawler_name );
+
+			/*
+			 * JSON-LD script
+			 */
+			$mt_json_array = $this->p->schema->get_json_array( $mod, $mt_og, $crawler_name );
+
+			/*
+			 * Clean-up open graph meta tags
+			 */
+			$og_types =& $this->p->cf['head']['og_type_mt'];
+			foreach ( $og_types as $og_type => $mt_names ) {
+				if ( $og_type === $mt_og['og:type'] )
+					continue;
+				foreach ( $mt_names as $key ) {
+					if ( isset( $mt_og[$key] ) && ! isset( $og_types[$mt_og['og:type']][$key] ) ) {
+						if ( $this->p->debug->enabled )
+							$this->p->debug->log( 'non-matching '.$mt_og['og:type'].' meta tag - unsetting '.$key );
+						unset( $og[$key] );
 					}
 				}
 			}
 
-			/**
-			 * Define an author_id, if one is available
+			/*
+			 * Generator meta tags
 			 */
-			if ( is_singular() || $use_post !== false ) {
-				if ( ! empty( $obj->post_author ) )
-					$author_id = $obj->post_author;
-				elseif ( ! empty( $this->p->options['seo_def_author_id'] ) )
-					$author_id = $this->p->options['seo_def_author_id'];
+			$mt_gen['generator'] = $this->p->check->get_ext_list();
 
-			} elseif ( is_author() || ( is_admin() && ( $screen = get_current_screen() ) && ( $screen->id === 'user-edit' || $screen->id === 'profile' ) ) ) {
-				$author = $this->p->util->get_author_object();
-				$author_id = $author->ID;
-
-			} elseif ( ( ! ( is_singular() || $use_post !== false ) && 
-				! is_search() && ! empty( $this->p->options['seo_def_author_on_index'] ) && ! empty( $this->p->options['seo_def_author_id'] ) ) || 
-				( is_search() && ! empty( $this->p->options['seo_def_author_on_search'] ) && ! empty( $this->p->options['seo_def_author_id'] ) ) )
-					$author_id = $this->p->options['seo_def_author_id'];
-
-			if ( $author_id !== false )
-				$this->p->debug->log( 'author_id value set to '.$author_id );
-
-			/**
-			 * Open Graph, Twitter Card
-			 *
-			 * The Twitter Card meta tags are added by the WpssoHeadTwittercard class using an 'wpsso_og' filter hook.
-			 */
-			if ( $this->p->is_avail['opengraph'] )
-				$meta_og = $this->p->og->get_array( $meta_og, $use_post );
-
-			/**
-			 * Name / SEO meta tags
-			 */
-			$meta_name = array();
-			if ( isset( $this->p->options['seo_author_name'] ) && 
-				$this->p->options['seo_author_name'] !== 'none' )
-					$meta_name['author'] = $this->p->addons['util']['user']->get_author_name( $author_id, $this->p->options['seo_author_name'] );
-
-			$meta_name['description'] = $this->p->webpage->get_description( $this->p->options['seo_desc_len'], 
-				'...', $use_post, true, false, true, 'seo_desc' );	// add_hashtags = false, custom meta = seo_desc
-
-			$meta_name = apply_filters( $lca.'_meta_name', $meta_name, $use_post );
-
-			/**
-			 * Link relation tags
-			 */
-			$link_rel = array();
-			if ( ! empty( $author_id ) )
-				$link_rel['author'] = $this->p->addons['util']['user']->get_author_website_url( $author_id, $this->p->options['link_author_field'] );
-
-			if ( ! empty( $this->p->options['link_publisher_url'] ) )
-				$link_rel['publisher'] = $this->p->options['link_publisher_url'];
-
-			$link_rel = apply_filters( $lca.'_link_rel', $link_rel, $use_post );
-
-			/**
-			 * Schema meta tags
-			 */
-			$meta_schema = array();
-
-			$meta_schema['description'] = $this->p->webpage->get_description( $this->p->options['og_desc_len'], 
-				'...', $use_post, true, true, true, 'schema_desc' );	// custom meta = schema_desc
-
-			$meta_schema = apply_filters( $lca.'_meta_schema', $meta_schema, $use_post );
-
-			/**
+			/*
 			 * Combine and return all meta tags
 			 */
-			$header_array = array_merge(
-				$this->get_single_tag( 'meta', 'name', 'generator',
-					$short_aop.' '.$this->p->cf['plugin'][$lca]['version'].
-						( $this->p->check->aop() ? 'L' : 
-							( $this->p->is_avail['aop'] ? 'U' : 'G' ) ), '', $use_post ),
-				$this->get_tag_array( 'link', 'rel', $link_rel, $use_post ),
-				$this->get_tag_array( 'meta', 'name', $meta_name, $use_post ),
-				$this->get_tag_array( 'meta', 'itemprop', $meta_schema, $use_post ),
-				$this->get_tag_array( 'meta', 'property', $meta_og, $use_post )
+			$head_array[$head_index] = array_merge(
+				$this->get_mt_array( 'meta', 'name', $mt_gen, $mod ),
+				$this->get_mt_array( 'link', 'rel', $link_rel, $mod ),
+				$this->get_mt_array( 'meta', 'property', $mt_og, $mod ),
+				$this->get_mt_array( 'meta', 'name', $mt_weibo, $mod ),
+				$this->get_mt_array( 'meta', 'name', $mt_tc, $mod ),
+				$this->get_mt_array( 'meta', 'itemprop', $mt_schema, $mod ),
+				$this->get_mt_array( 'meta', 'name', $mt_name, $mod ),		// seo description is last
+				$this->p->schema->get_noscript_array( $mod, $mt_og, $crawler_name ),
+				$mt_json_array
 			);
- 
-			if ( apply_filters( $lca.'_header_set_cache', $this->p->is_avail['cache']['transient'] ) ) {
-				set_transient( $cache_id, $header_array, $this->p->cache->object_expire );
-				$this->p->debug->log( $cache_type.': header array saved to transient '.$cache_id.' ('.$this->p->cache->object_expire.' seconds)');
+
+			if ( $cache_exp > 0 ) {
+				// update the transient array and keep the original expiration time
+				$cache_exp = SucomUtil::update_transient_array( $cache_id, $head_array, $cache_exp );
+				if ( $this->p->debug->enabled )
+					$this->p->debug->log( 'head array saved to transient '.$cache_id.' ('.$cache_exp.' seconds)' );
 			}
-			return $header_array;
+
+			// reset the reference url for admin notices
+			if ( is_admin() )
+				$this->p->notice->set_reference_url( null );
+
+			if ( $this->p->debug->enabled )
+				$this->p->debug->mark( 'build head array' );	// end timer
+
+			return $head_array[$head_index];
 		}
 
-		/**
-		 * Loops through the arrays (1 to 3 dimensions) and calls get_single_tag() for each
+		/*
+		 * Loops through the arrays and calls get_single_mt() for each
 		 */
-		private function get_tag_array( $tag = 'meta', $type = 'property', $tag_array, $use_post = false ) {
-			$this->p->debug->log( count( $tag_array ).' '.$tag.' '.$type.' to process' );
-			$this->p->debug->log( $tag_array );
-			$ret = array();
-			if ( empty( $tag_array ) )
-				return $ret;
-			foreach ( $tag_array as $f_name => $f_val ) {					// 1st-dimension array (associative)
-				if ( is_array( $f_val ) ) {
-					foreach ( $f_val as $s_num => $s_val ) {			// 2nd-dimension array
-						if ( SucomUtil::is_assoc( $s_val ) ) {
-							ksort( $s_val );
-							foreach ( $s_val as $t_name => $t_val )		// 3rd-dimension array (associative)
-								$ret = array_merge( $ret, $this->get_single_tag( $tag, $type, $t_name, $t_val, $f_name.':'.( $s_num + 1 ), $use_post ) );
-						} else $ret = array_merge( $ret, $this->get_single_tag( $tag, $type, $f_name, $s_val, $f_name.':'.( $s_num + 1 ), $use_post ) );
-					}
-				} else $ret = array_merge( $ret, $this->get_single_tag( $tag, $type, $f_name, $f_val, '', $use_post ) );
+		private function get_mt_array( $tag, $type, array &$mt_array, array &$mod ) {
+
+			if ( $this->p->debug->enabled ) {
+				$this->p->debug->log( count( $mt_array ).' '.$tag.' '.$type.' to process' );
+				$this->p->debug->log( $mt_array );
 			}
-			return $ret;
+
+			if ( empty( $mt_array ) )
+				return array();
+			elseif ( ! is_array( $mt_array ) ) {
+				if ( $this->p->debug->enabled )
+					$this->p->debug->log( 'exiting early: mt_array argument is not an array' );
+				return array();
+			}
+
+			$singles = array();
+			foreach ( $mt_array as $d_name => $d_val ) {	// first dimension array (associative)
+
+				if ( is_array( $d_val ) ) {
+
+					if ( empty( $d_val ) ) {	// allow hooks to modify the value
+						$singles[] = $this->get_single_mt( $tag,
+							$type, $d_name, null, '', $mod );
+
+					} else foreach ( $d_val as $dd_num => $dd_val ) {	// second dimension array
+
+						if ( SucomUtil::is_assoc( $dd_val ) ) {
+
+							// prevent duplicates - ignore images from text/html video
+							if ( isset( $dd_val['og:video:type'] ) && 
+								$dd_val['og:video:type'] === 'text/html' ) {
+
+								// skip if text/html video markup is disabled
+								if ( empty( $this->p->options['og_vid_html_type'] ) )
+									continue;
+
+								unset( $dd_val['og:video:embed_url'] );	// redundant - just in case
+								$ignore_images = true;
+
+							} else $ignore_images = false;
+
+							foreach ( $dd_val as $ddd_name => $ddd_val ) {	// third dimension array (associative)
+
+								// prevent duplicates - ignore images from text/html video
+								if ( $ignore_images && strpos( $ddd_name, 'og:image' ) !== false )
+									continue;
+
+								if ( is_array( $ddd_val ) ) {
+									if ( empty( $ddd_val ) ) {
+										$singles[] = $this->get_single_mt( $tag,
+											$type, $ddd_name, null, '', $mod );
+									} else foreach ( $ddd_val as $dddd_num => $dddd_val ) {	// fourth dimension array
+										$singles[] = $this->get_single_mt( $tag,
+											$type, $ddd_name, $dddd_val, $d_name.':'.
+												( $dd_num + 1 ), $mod );
+									}
+								} else $singles[] = $this->get_single_mt( $tag,
+									$type, $ddd_name, $ddd_val, $d_name.':'.
+										( $dd_num + 1 ), $mod );
+							}
+						} else $singles[] = $this->get_single_mt( $tag,
+							$type, $d_name, $dd_val, $d_name.':'.
+								( $dd_num + 1 ), $mod );
+					}
+				} else $singles[] = $this->get_single_mt( $tag,
+					$type, $d_name, $d_val, '', $mod );
+			}
+
+			$merged = array();
+			foreach ( $singles as $num => $element ) {
+				foreach ( $element as $parts )
+					$merged[] = $parts;
+				unset ( $singles[$num] );
+			}
+
+			return $merged;
 		}
 
-		private function get_single_tag( $tag = 'meta', $type = 'property', $name, $value = '', $comment = '', $use_post = false ) {
+		public function get_single_mt( $tag, $type, $name, $value, $cmt, array &$mod ) {
 
-			// known exceptions for the 'property' $type
-			if ( $tag === 'meta' && $type === 'property' && 
-				( strpos( $name, 'twitter:' ) === 0 || strpos( $name, ':' ) === false ) )
-					$type = 'name';
+			// check for known exceptions for the 'property' $type
+			if ( $tag === 'meta' && $type === 'property' ) {
+				switch ( $name ) {
+					// optimize by matching known values first
+					case ( strpos( $name, 'og:' ) === 0 ? true : false ):
+					case ( strpos( $name, 'article:' ) === 0 ? true : false ):
+						break;	// $type is already property
+					case ( strpos( $name, ':' ) === false ? true : false ):
+					case ( strpos( $name, 'twitter:' ) === 0 ? true : false ):
+					case ( strpos( $name, 'schema:' ) === 0 ? true : false ):	// internal meta tags
+						$type = 'name';
+						break;
+				}
+			}
 
 			$ret = array();
 			$attr = $tag === 'link' ? 'href' : 'content';
-			$log_pre = $tag.' '.$type.' '.$name;
+			$log_prefix = $tag.' '.$type.' '.$name;
+			$charset = get_bloginfo( 'charset' );
 
-			if ( $value === '' || $value === null ) {	// allow for 0
-				$this->p->debug->log( $log_pre.' value is empty (skipped)' );
-				return $ret;
-
-			} elseif ( $value === -1 ) {	// -1 is reserved, meaning use the defaults - exclude, just in case
-				$this->p->debug->log( $log_pre.' value is -1 (skipped)' );
-				return $ret;
-
-			} elseif ( is_array( $value ) ) {
-				$this->p->debug->log( $log_pre.' value is an array (skipped)' );
+			if ( is_array( $value ) ) {
+				if ( $this->p->debug->enabled )
+					$this->p->debug->log( $log_prefix.' value is an array (skipped)' );
 				return $ret;
 
 			} elseif ( is_object( $value ) ) {
-				$this->p->debug->log( $log_pre.' value is an object (skipped)' );
+				if ( $this->p->debug->enabled )
+					$this->p->debug->log( $log_prefix.' value is an object (skipped)' );
 				return $ret;
 			}
 
 			if ( strpos( $value, '%%' ) )
-				$value = $this->p->util->replace_inline_vars( $value, $use_post );
+				$value = $this->p->util->replace_inline_vars( $value, $mod );
 
-			$charset = get_bloginfo( 'charset' );
-			$value = htmlentities( $value, ENT_QUOTES, $charset, false );	// double_encode = false
-			$this->p->debug->log( $log_pre.' = "'.$value.'"' );
-			$comment_html = empty( $comment ) ? '' : '<!-- '.$comment.' -->';
+			switch ( $name ) {
+				case 'og:image:secure_url':
+				case 'og:video:secure_url':
+					if ( strpos( $value, 'https:' ) !== 0 ) {	// just in case
+						if ( $this->p->debug->enabled )
+							$this->p->debug->log( $log_prefix.' is not https (skipped)' );
+						return $ret;
+					}
+					break;
+			}
 
-			// add an additional secure_url meta tag for open graph images and videos
-			if ( $tag === 'meta' && $type === 'property' && 
-				( $name === 'og:image' || $name === 'og:video' ) && 
-				strpos( $value, 'https:' ) === 0 ) {
+			$ret[] = array( '', $tag, $type, $name, $attr, $value, $cmt );
 
-				$secure_url = $value;
-				$value = preg_replace( '/^https:/', 'http:', $value );
+			// $parts = array( $html, $tag, $type, $name, $attr, $value, $cmt );
+			foreach ( $ret as $num => $parts ) {
 
-				if ( empty( $this->p->options['add_'.$tag.'_'.$type.'_'.$name.':secure_url'] ) )
-					$this->p->debug->log( $log_pre.':secure_url is disabled (skipped)' );
-				else $ret[] = array( 
-					$comment_html.'<'.$tag.' '.$type.'="'.$name.':secure_url" '.$attr.'="'.$secure_url.'" />'."\n",
-					$tag, $type, $name.':secure_url', $attr, $secure_url, $comment
-				);
-			} 
-			
-			if ( empty( $this->p->options['add_'.$tag.'_'.$type.'_'.$name] ) )
-				$this->p->debug->log( $log_pre.' is disabled (skipped)' );
-			else $ret[] = array( 
-				$comment_html.'<'.$tag.' '.$type.'="'.$name.'" '.$attr.'="'.$value.'" />'."\n",
-				$tag, $type, $name, $attr, $value, $comment
-			);
+				// filtering of single meta tags can be enabled by defining WPSSO_FILTER_SINGLE_TAGS as true
+				if ( SucomUtil::get_const( 'WPSSO_FILTER_SINGLE_TAGS' ) )
+					$parts = $this->filter_single_mt( $parts, $mod );
+
+				$log_prefix = $parts[1].' '.$parts[2].' '.$parts[3];
+
+				if ( $this->p->debug->enabled )
+					$this->p->debug->log( $log_prefix.' = "'.$parts[5].'"' );
+
+				if ( $parts[5] === '' || $parts[5] === null ) {		// allow for 0
+					if ( $this->p->debug->enabled )
+						$this->p->debug->log( $log_prefix.' value is empty (skipped)' );
+
+				} elseif ( $parts[5] === -1 || $parts[5] === '-1' ) {	// -1 is reserved
+					if ( $this->p->debug->enabled )
+						$this->p->debug->log( $log_prefix.' value is -1 (skipped)' );
+
+				/*
+				 * Encode and escape all values, regardless if the meta tag is enabled or not.
+				 *
+				 * If the meta tag is enabled, HTML will be created and saved in $parts[0].
+				 */
+				} else {
+					if ( $parts[1] === 'meta' && 
+						$parts[2] === 'itemprop' && 
+							strpos( $parts[3], '.' ) !== 0 )
+								$match_name = preg_replace( '/^.*\./', '', $parts[3] );
+					else $match_name = $parts[3];
+
+					// boolean values are converted to their string equivalent
+					if ( is_bool( $parts[5] ) )
+						$parts[5] = $parts[5] ? 'true' : 'false';
+
+					switch ( $match_name ) {
+						case 'og:url':
+						case 'og:secure_url':
+						case 'og:image':
+						case 'og:image:url':
+						case 'og:image:secure_url':
+						case 'og:video':
+						case 'og:video:url':
+						case 'og:video:secure_url':
+						case 'og:video:embed_url':
+						case 'place:business:menu_url':
+						case 'place:business:order_url':
+						case 'twitter:image':
+						case 'twitter:player':
+						case 'canonical':
+						case 'shortlink':
+						case 'menu':	// place menu url
+						case 'url':
+							$parts[5] = SucomUtil::esc_url_encode( $parts[5] );
+							break;
+						case 'og:title':
+						case 'og:description':
+						case 'twitter:title':
+						case 'twitter:description':
+						case 'description':
+						case 'name':
+							$parts[5] = SucomUtil::encode_emoji( htmlentities( $parts[5],
+								ENT_QUOTES, $charset, false ) );	// double_encode = false
+						default:
+							$parts[5] = htmlentities( $parts[5],
+								ENT_QUOTES, $charset, false );		// double_encode = false
+							break;
+					}
+
+					// convert mixed case itemprop names (for example) to lower case
+					$add_key = strtolower( 'add_'.$parts[1].'_'.$parts[2].'_'.$parts[3] );
+
+					if ( ! empty( $this->p->options[$add_key] ) ) {
+						$parts[0] = ( empty( $parts[6] ) ? '' : '<!-- '.$parts[6].' -->' ).
+							'<'.$parts[1].' '.$parts[2].'="'.$match_name.'" '.$parts[4].'="'.$parts[5].'"/>'."\n";
+					} elseif ( $this->p->debug->enabled )
+						$this->p->debug->log( $log_prefix.' is disabled (skipped)' );
+
+					$ret[$num] = $parts;	// save the HTML and encoded value
+				}
+			}
 
 			return $ret;
+		}
+
+		// filtering of single meta tags can be enabled by defining WPSSO_FILTER_SINGLE_TAGS as true
+		// $parts = array( $html, $tag, $type, $name, $attr, $value, $cmt );
+		private function filter_single_mt( array &$parts, array &$mod ) {
+			$log_prefix = $parts[1].' '.$parts[2].' '.$parts[3];
+			$filter_name = $this->p->cf['lca'].'_'.$parts[1].'_'.$parts[2].'_'.$parts[3].'_'.$parts[4];
+			$new_value = apply_filters( $filter_name, $parts[5], $parts[6], $mod );
+
+			if ( $parts[5] !== $new_value ) {
+				if ( $this->p->debug->enabled )
+					$this->p->debug->log( $log_prefix.' (original) = "'.$parts[5].'"' );
+				if ( is_array( $new_value ) ) {
+					foreach( $new_value as $key => $value ) {
+						$this->p->debug->log( $log_prefix.' (filtered:'.$key.') = "'.$value.'"' );
+						$parts[6] = $parts[3].':'.( is_numeric( $key ) ? $key + 1 : $key );
+						$parts[5] = $value;
+					}
+				} else {
+					$this->p->debug->log( $log_prefix.' (filtered) = "'.$new_value.'"' );
+					$parts[5] = $new_value;
+				}
+			}
+			return $parts;
 		}
 	}
 }

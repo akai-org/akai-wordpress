@@ -1,5 +1,5 @@
 GIT
-  remote: https://github.com/welaika/wordmove.git
+  remote: git://github.com/welaika/wordmove.git
   revision: 2097b2f640b31c46f406721905a3c712bb60111d
   specs:
     wordmove (2.0.0)
@@ -19,7 +19,7 @@ GEM
       tzinfo (~> 1.1)
     colorize (0.7.7)
     i18n (0.7.0)
-    json (1.8.3)
+    json (1.8.6)
     minitest (5.10.1)
     net-scp (1.2.1)
       net-ssh (>= 2.6.5)

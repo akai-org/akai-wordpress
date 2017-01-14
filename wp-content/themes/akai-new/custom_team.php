@@ -31,9 +31,15 @@ get_header();
         <?php
         // Get all people on this person_category
         query_posts(Array(
-          'person_category' => $person_category->slug,
           'posts_per_page' => -1,
           'post_type' => 'person',
+	  'tax_query' => array(
+        	array(
+            		'taxonomy' => 'person_category',
+            		'field' => 'slug',
+            		'terms' => $person_category->slug
+        		)
+     		),
           'orderby' => 'menu_order',
           'order' => 'ASC'
         ));

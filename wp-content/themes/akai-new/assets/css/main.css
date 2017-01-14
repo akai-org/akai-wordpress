@@ -811,6 +811,9 @@ dl {
     @media screen and (min-width: 960px) {
       .site-header.big .logo {
         margin-top: -155px; } }
+    @media screen and (max-width: 960px) {
+       .site-header.big .logo {
+        margin-top: 0px !important; } }
     .site-header.big .logo img {
       padding: 40px; }
 
